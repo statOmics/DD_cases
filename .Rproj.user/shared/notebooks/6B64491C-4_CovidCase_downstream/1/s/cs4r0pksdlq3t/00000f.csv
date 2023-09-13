@@ -1,0 +1,7 @@
+"0","gene <- ""ACTG1"""
+"0","DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Naive_moderate, "
+"0","                                   genes = gene)"
+"0","DGE_plots <- visualize_DGE(pb = pb_counts_list$Naive_moderate, "
+"0","                           genes = gene)"
+"0",""
+"0","print(DD_prop_plots[[1]] + DGE_plots[[1]] + plot_layout(guides = ""collect""))"

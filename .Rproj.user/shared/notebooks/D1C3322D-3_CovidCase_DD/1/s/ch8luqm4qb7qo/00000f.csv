@@ -1,0 +1,8 @@
+"0","for (i in seq_along(pb_ct)) {"
+"0","  pb_ct[[i]]$sample_id <- paste0(pb_ct[[i]]$donor_id, "
+"0","                                 ""_"", "
+"0","                                 gsub("" "", ""_"", pb_ct[[i]]$cell_type_curated))"
+"0","}"
+"0","pb_bin$sample_id <- paste0(pb_bin$donor_id, "
+"0","                           ""_"", "
+"0","                           gsub("" "", ""_"", pb_bin$cell_type_curated))"

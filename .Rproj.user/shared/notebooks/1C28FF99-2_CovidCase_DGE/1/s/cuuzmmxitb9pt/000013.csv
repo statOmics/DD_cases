@@ -1,0 +1,6 @@
+"0","pdf(""./figures/tsne_explore_covariates.pdf"","
+"0","            width     = 12,"
+"0","            height    = 8,"
+"0","            pointsize = 4)"
+"0","(gg_cam_1 + gg_cam_2 + gg_cam_3) /"
+"0","  (gg_Ncl_1 + gg_Ncl_2 + gg_Ncl_3)"

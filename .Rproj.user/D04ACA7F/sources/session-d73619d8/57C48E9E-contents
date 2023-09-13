@@ -1,0 +1,219 @@
+---
+title: "Case study for Covid-19 B-cells: differential detection"
+author: "Jeroen Gilis"
+date: "13/09/2023"
+output:
+    html_document:
+      code_download: true    
+      theme: cosmo
+      toc: true
+      toc_float: true
+      highlight: tango
+      number_sections: true
+---
+
+# Load libraries
+
+```{r, message=FALSE, warning=FALSE}
+library(SingleCellExperiment)
+library(scuttle)
+library(ggplot2)
+library(patchwork)
+library(scater)
+library(scran)
+library(edgeR)
+library(limma)
+library(pbapply)
+```
+
+```{r}
+here::i_am("3_CovidCase_DD.Rmd")
+```
+
+# Load DGE analysis data and results
+
+```{r}
+pb_ct <- readRDS("./objects/pb_ct_filt.rds")
+DGE_res <- readRDS("./objects/DGE_res_edgeR_NB.rds")
+```
+
+# Load sce data
+
+```{r}
+sce <- readRDS("./objects/sce_Covid_Bcells.rds")
+```
+
+# Binarize and pseudobulk
+
+```{r}
+# binarize
+assays(sce)$detection <- assays(sce)$counts
+assays(sce)$detection[assays(sce)$detection >=1] <- 1
+
+# aggregate
+pb_bin <- aggregateAcrossCells(sce,
+                               use.assay.type = "detection",
+                               ids = colData(sce)[,c("donor_id","cell_type_curated")])
+pb_bin$Status_on_day_collection_summary <- as.factor(pb_bin$Status_on_day_collection_summary)
+
+pb_bin$cell_type_curated <- as.factor(pb_bin$cell_type_curated)
+```
+
+# Filtering
+
+Retain the same five cell types
+
+```{r}
+pb_bin <- pb_bin[,pb_bin$cell_type_curated %in% c("B cell", "class switched memory B cell",
+                                      "immature B cell", "naive B cell",
+                                      "unswitched memory B cell")]
+colData(pb_bin) <- droplevels(colData(pb_bin))
+```
+
+Add a column for celltype-donor combination -> unique sample identifier
+
+```{r}
+for (i in seq_along(pb_ct)) {
+  pb_ct[[i]]$sample_id <- paste0(pb_ct[[i]]$donor_id, 
+                                 "_", 
+                                 gsub(" ", "_", pb_ct[[i]]$cell_type_curated))
+}
+pb_bin$sample_id <- paste0(pb_bin$donor_id, 
+                           "_", 
+                           gsub(" ", "_", pb_bin$cell_type_curated))
+```
+
+Copy the gene-level and patient-level filtering from the DGE analysis.
+
+```{r}
+label <- pb_bin$cell_type_curated
+pb_bin_ct <- vector(mode =  "list", length = length(unique(label)))
+
+for (i in 1:length(unique(label))) {
+  
+  # currentlab <- as.character(sort(unique(label))[i])
+  # # added line -> essential, as sample_ is only unique within cell type
+  # pb_bin_hlp <- pb_bin[,pb_bin$cell_type_curated == currentlab]
+  
+  pb_bin_ct[[i]] <- pb_bin[rownames(pb_ct[[i]]),
+                           match(pb_ct[[i]]$sample_id, pb_bin$sample_id)]
+  colData(pb_bin_ct[[i]]) <- droplevels(colData(pb_bin_ct[[i]]))
+}
+names(pb_bin_ct) <- sort(unique(label))
+```
+
+```{r}
+saveRDS(pb_bin_ct, "./objects/pb_bin_ct_filt.rds")
+```
+
+# Setup contrast matrix
+
+```{r}
+design <- model.matrix(~ Site + sex + Status_on_day_collection_summary, 
+                         colData(pb_bin_ct$`B cell`))
+colnames(design) <- sub("Status_on_day_collection_summary", "", colnames(design))
+colnames(design)[1] <- "Intercept"
+  
+L <- matrix(0, ncol = 5, nrow = ncol(design)) # initialize contrast matrix
+rownames(L) <- colnames(design)
+colnames(L) <- c("AsymptomaticVsHealthy", "MildVsHealthy", 
+                 "ModerateVsHealthy", "SevereVsHealthy",
+                 "CriticalVsHealthy")
+
+L["Asymptomatic",1] <- 1
+L["Mild",2] <- 1
+L["Moderate",3] <- 1
+L["Severe",4] <- 1
+L["Critical",5] <- 1
+L
+```
+
+# Differential detection analysis - edgeR-NB_optim
+
+## Perform analysis
+
+```{r}
+DD_res <- pblapply(pb_bin_ct, function(element){
+  
+    # get cell type name
+    ct <- levels(droplevels(element$cell_type_curated))
+  
+    # create design matrix
+    design <- model.matrix(~ Site + sex + Status_on_day_collection_summary, 
+                           colData(element))
+    colnames(design) <- sub("Status_on_day_collection_summary", "", colnames(design))
+    colnames(design)[1] <- "Intercept"
+    
+    # Remove features detected in (nearly) all cells
+    med_detection <- rowMedians(sweep(assay(element), 2, element$ncells, "/"))
+    hist(med_detection, breaks=40)
+    abline(v=0.9, col="red", lwd=2, cex.main=0.7)
+    
+    # Differential detection analysis with edgeR-NB_optim
+    y <- DGEList(counts=assay(element)[med_detection < 0.9,], samples=colData(element))
+    of <- colMeans(sweep(assay(element)[med_detection < 0.9,], 2, element$ncells, "/"))
+    y$offset <- log(element$ncells*of)
+    y <- estimateDisp(y, design)
+    fit <- glmQLFit(y, design, robust=T)
+  
+    # Intermediate visualization
+    par(mfrow=c(1,2))
+    plotBCV(y, main = paste0("QLDisp plot for ", ct), cex.main=0.7)
+    plotQLDisp(fit, main = paste0("QLDisp plot for ", ct), cex.main=0.7)
+    abline(h=1, col="gold4", lwd=2)
+    
+    # Differential testing
+    resList_i <- vector(mode = "list", length = ncol(L))
+    for(j in 1:ncol(L)){
+      test <- glmQLFTest(fit, contrast=L[,j], poisson.bound = FALSE)
+      resList_i[[j]] <- test$table
+    }
+    return(resList_i)
+})
+```
+
+Note: by removing genes that are detected in (nearly) all samples in the
+differential detection analysis but not the differential expression analysis,
+the results will be of different dimensions. For easy comparison between the two
+analyses, I will here fill in `NA` values for the genes that were removed in the
+DD analysis
+
+```{r}
+for(i in seq_along(DD_res)){
+  for(j in 1:5){
+    removed <- which(!rownames(DGE_res[[i]][[j]]) %in% rownames(DD_res[[i]][[j]])) # detect removed genes
+    DD_res[[i]][[j]][nrow(DD_res[[i]][[j]]) + length(removed),] <- NA # add NA values for removed genes
+    rownames(DD_res[[i]][[j]])[(nrow(DD_res[[i]][[j]])-length(removed)+1):nrow(DD_res[[i]][[j]])] <- rownames(DGE_res[[i]][[j]])[removed] # add rownames for removed genes
+    DD_res[[i]][[j]] <- DD_res[[i]][[j]][match(rownames(DGE_res[[i]][[j]]), rownames(DD_res[[i]][[j]])),] # correct order    
+  }
+
+}
+
+saveRDS(DD_res, "./objects/DD_res_edgeR_NB_optim.rds")
+```
+
+## Visualize p-values
+
+```{r}
+pdf("./figures/pval_hist_DD_edgeR_NB_optim.pdf",
+            width     = 8,
+            height    = 8,
+            pointsize = 4)
+par(mfrow=c(5,5))
+for (j in 1:5) {
+  for(i in 1:5){
+    pat_per_ct <- table(pb_bin_ct[[j]]$Status_on_day_collection_summary)
+    hist(DD_res[[j]][[i]]$PValue, breaks=20, xlab = "p-values",
+         main = paste0(levels(droplevels(pb_bin_ct[[j]]$cell_type_curated)), " \n ", 
+                       levels(droplevels(pb_bin_ct[[j]]$Status_on_day_collection_summary))[i+1], " - ",
+                       pat_per_ct[1], " vs ",pat_per_ct[i+1]))
+  }
+}
+dev.off()
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```

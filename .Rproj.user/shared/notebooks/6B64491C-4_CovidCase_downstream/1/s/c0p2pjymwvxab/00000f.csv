@@ -1,0 +1,5 @@
+"0","hlp <- which(p.adjust(DD_res$`naive B cell`[[3]]$PValue, method=""BH"") < 0.05 &"
+"0","               p.adjust(DGE_res$`naive B cell`[[3]]$PValue, method=""BH"") >= 0.05)"
+"0","interest <- DD_res$`naive B cell`[[3]][hlp,]"
+"0","interest <- interest[order(interest$PValue),]"
+"0","head(interest,n=10)"

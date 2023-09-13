@@ -1,0 +1,7 @@
+"0","pb <- runTSNE(pb,"
+"0","              dimred = 'PCA',"
+"0","              n_dimred = 10,"
+"0","              external_neighbors=TRUE)"
+"0",""
+"0","plotTSNE(pb,"
+"0","         colour_by = ""Site"")"

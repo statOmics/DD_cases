@@ -1,0 +1,5 @@
+"0","plotTSNE(pb[,which(pb$Site == ""Ncl"" & pb$cell_type_curated %in% c(""immature B cell"", ""naive B cell""))],"
+"0","         colour_by = ""development_stage"","
+"0","         shape_by = ""Status"","
+"0","         point_size=3,"
+"0","         point_alpha = 1) + ggtitle(""development_stage"")"

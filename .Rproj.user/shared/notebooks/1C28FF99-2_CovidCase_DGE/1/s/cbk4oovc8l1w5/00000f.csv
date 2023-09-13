@@ -1,0 +1,4 @@
+"0","# received error without prior computation of size factors..."
+"0","sf <- librarySizeFactors(pb)"
+"0","pb <- logNormCounts(pb,"
+"0","                    size.factors=sf)"

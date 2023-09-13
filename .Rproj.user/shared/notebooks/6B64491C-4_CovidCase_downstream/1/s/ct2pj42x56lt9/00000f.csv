@@ -1,0 +1,5 @@
+"0","sce_sub <- sce[,sce$cell_type_curated == ""naive B cell""]"
+"0","sce_sub <- sce_sub[,sce_sub$donor_id %in% pb_bin_list$Naive_moderate$donor_id]"
+"0",""
+"0","lnc <- logNormCounts(sce_sub,name=""logNormCounts"")"
+"0","lnc$Site_sex <- paste0(lnc$Site, ""_"", lnc$sex)"
