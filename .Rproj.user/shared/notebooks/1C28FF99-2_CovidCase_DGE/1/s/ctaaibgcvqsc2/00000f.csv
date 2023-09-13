@@ -1,8 +1,0 @@
-"0","pb <- pb[,pb$ncells >= 20] # remove psudobulk samples from less than 20 cells"
-"0","# retain only these five genrally abundant cell types"
-"0","pb <- pb[,pb$cell_type_curated %in% c(""B cell"", ""class switched memory B cell"","
-"0","                                      ""immature B cell"", ""naive B cell"","
-"0","                                      ""unswitched memory B cell"")] "
-"0","pb <- pb[,pb$Site != ""Sanger""] # remove samples for the Sanger sequencing site:"
-"0","# not that many samples and no healthy samples"
-"0","colData(pb) <- droplevels(colData(pb))"

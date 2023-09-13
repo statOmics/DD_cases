@@ -1,5 +1,0 @@
-"0","set.seed(1234)"
-"0","pb <- runPCA(pb, "
-"0","             ncomponents=30, "
-"0","             subset_row=hvg)"
-"2","Warning: useNames = NA is deprecated. Instead, specify either useNames = TRUE or useNames = TRUE."

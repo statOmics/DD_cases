@@ -1,5 +1,0 @@
-"0","pdf(""./figures/figure3.pdf"","
-"0","            width     = 8,"
-"0","            height    = 5,"
-"0","            pointsize = 4)"
-"0","DD_prop_plots[[3]] + DGE_plots[[3]] + plot_layout(guides = ""collect"")"

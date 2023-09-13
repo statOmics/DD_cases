@@ -1,5 +1,0 @@
-"0","dec <- modelGeneVar(pb)"
-"0","fit <- metadata(dec)"
-"0","# get 10% most variable genes"
-"0","hvg <- getTopHVGs(dec, "
-"0","                  prop=0.1)"

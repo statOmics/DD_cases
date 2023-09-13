@@ -1,5 +1,0 @@
-"0","here::i_am(""2_CovidCase_DGE.Rmd"")"
-"2","here() starts at /Users/jg/Desktop/PhD/DD_project/DD_cases/Covid
-"
-"0","out_dir <- here::here(""figures"")"
-"0","fs::dir_create(out_dir)"

@@ -1,6 +1,0 @@
-"0","here::i_am(""3_CovidCase_downstream.Rmd"")"
-"2","Error: Could not find associated project in working directory or any parent directory.
-- Path in project: 3_CovidCase_downstream.Rmd
-- Current working directory: /Users/jg/Desktop/PhD/DD_project/DD_cases/Covid
-Please open the project associated with this file and try again.
-"

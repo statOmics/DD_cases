@@ -1,4 +1,0 @@
-"0","pb_bin_list <- list(Naive_moderate = pb_bin_ct$`naive B cell`[,which(pb_bin_ct$`naive B cell`$Status_on_day_collection_summary %in% c(""Healthy"", ""Moderate""))],"
-"0","                    Naive_critical = pb_bin_ct$`naive B cell`[,which(pb_bin_ct$`naive B cell`$Status_on_day_collection_summary %in% c(""Healthy"", ""Critical""))],"
-"0","                    Unswitched_moderate = pb_bin_ct$`unswitched memory B cell`[,which(pb_bin_ct$`unswitched memory B cell`$Status_on_day_collection_summary %in% c(""Healthy"", ""Moderate""))],"
-"0","                    Unswitched_critical = pb_bin_ct$`unswitched memory B cell`[,which(pb_bin_ct$`unswitched memory B cell`$Status_on_day_collection_summary %in% c(""Healthy"", ""Critical""))])"

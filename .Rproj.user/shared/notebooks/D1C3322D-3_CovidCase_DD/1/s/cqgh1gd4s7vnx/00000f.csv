@@ -1,4 +1,0 @@
-"0","pb_bin <- pb_bin[,pb_bin$cell_type_curated %in% c(""B cell"", ""class switched memory B cell"","
-"0","                                      ""immature B cell"", ""naive B cell"","
-"0","                                      ""unswitched memory B cell"")]"
-"0","colData(pb_bin) <- droplevels(colData(pb_bin))"
