@@ -1,7 +1,7 @@
 ---
-title: "Obtain Covid-19 B-cells"
-author: "Jeroen Gilis"
-date: "13/09/2023"
+title: "Obtain data for the case study on Covid-19 B-cells"
+author: "Jeroen Gilis & Laura Perin"
+date: "14/11/2023"
 output:
     html_document:
       code_download: true    

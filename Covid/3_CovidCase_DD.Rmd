@@ -1,7 +1,7 @@
 ---
-title: "Case study for Covid-19 B-cells: differential detection"
-author: "Jeroen Gilis"
-date: "13/09/2023"
+title: "Case study on Covid-19 B-cells: differential detection analysis"
+author: "Jeroen Gilis & Laura Perin"
+date: "14/11/2023"
 output:
     html_document:
       code_download: true    

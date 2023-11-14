@@ -1,7 +1,7 @@
 ---
-title: "Case study for Covid-19 B-cells: differential expression"
-author: "Jeroen Gilis"
-date: "13/09/2023"
+title: "Case study on Covid-19 B-cells: differential gene expression analysis"
+author: "Jeroen Gilis & Laura Perin"
+date: "14/11/2023"
 output:
     html_document:
       code_download: true    
@@ -287,7 +287,7 @@ saveRDS(DGE_res ,"./objects/DGE_res_edgeR_NB.rds")
 ## Visualize p-values
 
 ```{r}
-pdf("./figures/pvalhist_DGE_edgeR_NB.pdf",
+pdf("./figures/pval_hist_DGE_edgeR_NB.pdf",
             width     = 8,
             height    = 8,
             pointsize = 4)
