@@ -90,11 +90,6 @@ label <- pb_bin$cell_type_curated
 pb_bin_ct <- vector(mode =  "list", length = length(unique(label)))
 
 for (i in 1:length(unique(label))) {
-  
-  # currentlab <- as.character(sort(unique(label))[i])
-  # # added line -> essential, as sample_ is only unique within cell type
-  # pb_bin_hlp <- pb_bin[,pb_bin$cell_type_curated == currentlab]
-  
   pb_bin_ct[[i]] <- pb_bin[rownames(pb_ct[[i]]),
                            match(pb_ct[[i]]$sample_id, pb_bin$sample_id)]
   colData(pb_bin_ct[[i]]) <- droplevels(colData(pb_bin_ct[[i]]))
@@ -193,6 +188,9 @@ saveRDS(DD_res, "./objects/DD_res_edgeR_NB_optim.rds")
 ```
 
 ## Visualize p-values
+
+These histograms of p-values was not used as a figure in our manuscript, nor in 
+the manuscript's supplementary materials.
 
 ```{r}
 pdf("./figures/pval_hist_DD_edgeR_NB_optim.pdf",

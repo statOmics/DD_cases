@@ -140,6 +140,9 @@ gg_Ncl_3 <- plotTSNE(pb[,pb$Site == "Ncl"],
                      colour_by = "Status")
 ```
 
+These tSNE plots were not used as a figure in our manuscript, nor in the 
+manuscript's supplementary materials.
+
 ```{r, fig.width=10, fig.height=6}
 pdf("./figures/tsne_explore_covariates.pdf",
             width     = 12,
@@ -150,8 +153,9 @@ pdf("./figures/tsne_explore_covariates.pdf",
 dev.off()
 ```
 
-I'd say it's vital to include Site and sex in the analysis. It doesn't
-look necessary to additionally include age;
+Based on these visualizations, it seems important to include Site and sex as 
+covariates in the analysis. It does not look necessary to additionally include 
+age.
 
 ```{r, fig.width=6, fig.height=4}
 plotTSNE(pb[,which(pb$Site == "Ncl" & pb$cell_type_curated %in% c("immature B cell", "naive B cell"))],
@@ -285,6 +289,9 @@ saveRDS(DGE_res ,"./objects/DGE_res_edgeR_NB.rds")
 ```
 
 ## Visualize p-values
+
+These histograms of p-values was not used as a figure in our manuscript, nor in 
+the manuscript's supplementary materials.
 
 ```{r}
 pdf("./figures/pval_hist_DGE_edgeR_NB.pdf",

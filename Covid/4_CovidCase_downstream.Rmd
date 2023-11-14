@@ -1,7 +1,7 @@
 ---
-title: "Case study for Covid-19 B-cells: downstream comparison and visualization"
-author: "Jeroen Gilis"
-date: "13/09/2023"
+title: "Case study on Covid-19 B-cells: downstream comparison and visualization"
+author: "Jeroen Gilis & Laura Perin"
+date: "14/11/2023"
 output:
     html_document:
       code_download: true    
@@ -11,6 +11,10 @@ output:
       highlight: tango
       number_sections: true
 ---
+
+```{r}
+here::i_am("4_CovidCase_downstream.Rmd")
+```
 
 # Load libraries
 
@@ -29,10 +33,16 @@ library(harmonicmeanp)
 library(stageR)
 library(dplyr)
 library(ComplexHeatmap)
+library(openxlsx)
+library(biomaRt)
+library(ggrepel)
+library(GO.db)
 ```
 
+# Load helper functions
+
 ```{r}
-here::i_am("4_CovidCase_downstream.Rmd")
+source("./5_CovidCase_HelperFunctions.R")
 ```
 
 # Load DGE analysis data and results
@@ -50,6 +60,9 @@ DD_res <- readRDS("./objects/DD_res_edgeR_NB_optim.rds")
 ```
 
 # Venn diagram
+
+This Venn diagram was not used as a figure in our manuscript, nor in the 
+manuscript's supplementary materials.
 
 ```{r}
 pdf("./figures/Venndiagram_DD_DE.pdf",
@@ -103,7 +116,8 @@ for (j in seq_along(DD_res)) {
     names(pScreen) <- rownames(DD_res[[j]][[i]])
     
     #confirmation stage
-    pConfirmation <- as.matrix(cbind(DD_res[[j]][[i]]$PValue, DGE_res[[j]][[i]]$PValue))
+    pConfirmation <- as.matrix(cbind(DD_res[[j]][[i]]$PValue,
+                                     DGE_res[[j]][[i]]$PValue))
     dimnames(pConfirmation) <- list(rownames(DD_res[[j]][[i]]), c("DD","DE"))
     
     # stageWise analysis
@@ -119,12 +133,12 @@ for (j in seq_along(DD_res)) {
     
     if(colSums(res)[1] == 1){
       DD_DE_Sig_j_i <- getAdjustedPValues(stageRObj, 
-                                      onlySignificantGenes=TRUE, 
+                                      onlySignificantGenes=FALSE, 
                                       order=FALSE)
     } else{
       DD_DE_Sig_j_i <- getAdjustedPValues(stageRObj, 
-                                      onlySignificantGenes=TRUE, 
-                                      order=TRUE)
+                                      onlySignificantGenes=FALSE, 
+                                      order=FALSE)
     }
     
     if(is.null(DD_DE_Sig_j_i)){
@@ -135,601 +149,686 @@ for (j in seq_along(DD_res)) {
   }
   stageR_res[[j]] <- stageR_res_j
 }
-
 ```
 
-```{r}
-for(j in 1:5){
-  for(i in 1:5){
-    if(all(is.na(stageR_res[[j]][[i]]))){
-      stagewise <- 0
-    } else if(length(stageR_res[[j]][[i]])==3){
-      stagewise <- 1
-    } else {
-      stagewise <- sum(stageR_res[[j]][[i]][,1] < 0.05, na.rm=TRUE)
-    }
-    sig_DD <- rownames(DD_res[[j]][[i]])[which(p.adjust(DD_res[[j]][[i]]$PValue, method="BH") < 0.05)]
-    sig_DE <- rownames(DGE_res[[j]][[i]])[which(p.adjust(DGE_res[[j]][[i]]$PValue, method="BH") < 0.05)]
+## Manuscript table 1
 
-    separate <- length(unique(sig_DD, sig_DE))
-    
-    print(c(stagewise, separate))
-  }
-}
-```
-
-# Visualize offset
+With the following code, we generated *table1* from our manuscript.
 
 ```{r}
-par(mfrow=c(2,3))
-for (element in pb_bin_ct) {
-    bin_counts <- assay(element)
-
-    of <- colMeans(sweep(bin_counts, 2, element$ncells, "/")) 
-    logitOf <- log(of/(1-of))
-    
-    plot(x = jitter(as.numeric(element$Status_on_day_collection_summary)), 
-         y = of,
-         col = element$Site, 
-         pch = 19, 
-         cex = 0.8, 
-         main = "Offset per Status, colored by Site",
-         xlab = "Covid status")
-}
-```
-
-# Visualization helper functions
-
-```{r}
-visualize_DGE <- function(pb, genes){
-    cd <- colData(pb)
-    cd <- droplevels(cd)
-    libSize <- pb %>%
-        counts %>%
-        colSums %>%
-        unname
-
-    gg_list <- lapply(genes, function(gene){
-      
-        data <- data.frame(cpm = log2(counts(pb)[gene,]+0.5) - log2(libSize+1)+log2(1e6),
-                           status = cd$Status_on_day_collection_summary,
-                           batch = paste0(cd$Site,"_",cd$sex))
-        data$cpm[is.infinite(data$cpm)] <- NA
-        
-        levels(data$batch) <- c("Cambridge_female", "Cambridge_male", 
-                                "Ncl_female", "Ncl_male")
-        
-        data$status_batch <- factor(paste0(data$status, "_", data$batch),
-                                    levels = paste0(rep(levels(data$status),each=4),
-                                                    "_", 
-                                                    rep(levels(data$batch), times=2)))
-        data$dotposition <- data$status_batch
-        levels(data$dotposition) <- list("0.7" = levels(data$status_batch)[1],
-                                         "0.9" = levels(data$status_batch)[2],
-                                         "1.1" = levels(data$status_batch)[3],
-                                         "1.3" = levels(data$status_batch)[4],
-                                         "1.7" = levels(data$status_batch)[5],
-                                         "1.9" = levels(data$status_batch)[6],
-                                         "2.1" = levels(data$status_batch)[7],
-                                         "2.3" = levels(data$status_batch)[8])
-        data$dotposition <- as.numeric(as.character(data$dotposition))
-      
-        gg <- ggplot(data = data, aes(x=status,y=cpm)) +
-            geom_violin() +
-            geom_jitter(aes(x=dotposition, 
-                          y=cpm, 
-                          col=batch),
-                      size=2, 
-                      width = 0.05) +
-            ggtitle(paste0("Log CPM: ",gene)) +
-            theme_bw() +
-            theme(plot.title = element_text(size=11))
-        return(gg)
+# number of differentially detected genes (BH-FDR, alpha < 0.05)
+num_DD <- unlist(lapply(DD_res, function(ct){
+    lapply(ct, function(x){
+        sum(p.adjust(x$PValue, method="BH") < 0.05, na.rm = TRUE)
     })
-    return(gg_list)
-}
+}))
 
-visualize_DD_LOR <- function(pb, genes){
-    bin_counts <- assay(pb)
-    cd <- colData(pb)
-    cd <- droplevels(cd)
-    of <- colMeans(sweep(bin_counts, 2, cd$ncells, "/")) 
-    odds_global <- of/(1-of)
-
-    gg_list <- lapply(genes, function(gene){
-      odds_gene <- bin_counts[gene,]/(cd$ncells - bin_counts[gene,])
-      
-      data <- data.frame(odds_gene = odds_gene,
-                         odds_global = odds_global,
-                         LOR = log(odds_gene/odds_global),
-                         status = cd$Status_on_day_collection_summary,
-                         batch = paste0(cd$Site,"_",cd$sex))
-      data$LOR[is.infinite(data$LOR)] <- NA
-      
-      levels(data$batch) <- c("Cambridge_female", "Cambridge_male", 
-                                "Ncl_female", "Ncl_male")
-        
-      data$status_batch <- factor(paste0(data$status, "_", data$batch),
-                                  levels = paste0(rep(levels(data$status),each=4),
-                                                  "_", 
-                                                  rep(levels(data$batch), times=2)))
-      data$dotposition <- data$status_batch
-      levels(data$dotposition) <- list("0.7" = levels(data$status_batch)[1],
-                                       "0.9" = levels(data$status_batch)[2],
-                                       "1.1" = levels(data$status_batch)[3],
-                                       "1.3" = levels(data$status_batch)[4],
-                                       "1.7" = levels(data$status_batch)[5],
-                                       "1.9" = levels(data$status_batch)[6],
-                                       "2.1" = levels(data$status_batch)[7],
-                                       "2.3" = levels(data$status_batch)[8])
-      data$dotposition <- as.numeric(as.character(data$dotposition))
-      
-      gg <- ggplot(data = data,aes(x=status, y= LOR)) +
-          geom_violin() +
-          geom_jitter(aes(x=dotposition, 
-                          y=LOR, 
-                          col=batch),
-                      size=2, 
-                      width = 0.05) +
-          ggtitle(paste0("LOR: ", gene)) +
-          theme_bw() +
-          theme(plot.title = element_text(size=11))
-      return(gg)
+# number of differentially expressed genes (BH-FDR, alpha < 0.05)
+num_DE <- unlist(lapply(DGE_res, function(ct){
+    lapply(ct, function(x){
+        sum(p.adjust(x$PValue, method="BH") < 0.05, na.rm = TRUE)
     })
-    return(gg_list)
-}
+}))
 
-visualize_DD_logprop <- function(pb, genes){
-    bin_counts <- assay(pb)
-    cd <- colData(pb)
-    cd <- droplevels(cd)
-    logprop <- log(sweep(bin_counts, 2, cd$ncells, "/"))
-
-    gg_list <- lapply(genes, function(gene){
-
-      data <- data.frame(logprop = logprop[gene,],
-                         status = cd$Status_on_day_collection_summary,
-                         batch = paste0(cd$Site,"_",cd$sex))
-      data$logprop[is.infinite(data$logprop)] <- NA
-      
-      levels(data$batch) <- c("Cambridge_female", "Cambridge_male", 
-                                "Ncl_female", "Ncl_male")
-        
-      data$status_batch <- factor(paste0(data$status, "_", data$batch),
-                                  levels = paste0(rep(levels(data$status),each=4),
-                                                  "_", 
-                                                  rep(levels(data$batch), times=2)))
-      data$dotposition <- data$status_batch
-      levels(data$dotposition) <- list("0.7" = levels(data$status_batch)[1],
-                                       "0.9" = levels(data$status_batch)[2],
-                                       "1.1" = levels(data$status_batch)[3],
-                                       "1.3" = levels(data$status_batch)[4],
-                                       "1.7" = levels(data$status_batch)[5],
-                                       "1.9" = levels(data$status_batch)[6],
-                                       "2.1" = levels(data$status_batch)[7],
-                                       "2.3" = levels(data$status_batch)[8])
-      data$dotposition <- as.numeric(as.character(data$dotposition))
-      
-      gg <- ggplot(data = data,aes(x=status, y= logprop)) +
-          geom_violin() +
-          geom_jitter(aes(x=dotposition, 
-                          y=logprop, 
-                          col=batch),
-                      size=2, 
-                      width = 0.05) +
-          ggtitle(paste0("logprop: ", gene)) +
-          theme_bw() +
-          theme(plot.title = element_text(size=11))
-      return(gg)
+# number of overlap between differentially expressed and differentially detected genes 
+num_overlap <- unlist(lapply(1:5, function(ct){
+    lapply(1:5, function(contrast){
+        sum(p.adjust(DD_res[[ct]][[contrast]]$PValue, method="BH") < 0.05 & 
+                p.adjust(DGE_res[[ct]][[contrast]]$PValue, method="BH") < 0.05, na.rm=TRUE)
     })
-    return(gg_list)
-}
+}))
 
-visualize_DD_prop <- function(pb, genes){
-    bin_counts <- assay(pb)
-    cd <- colData(pb)
-    cd <- droplevels(cd)
-    proportions <- sweep(bin_counts, 2, cd$ncells, "/")
-
-    gg_list <- lapply(genes, function(gene){
-
-        data <- data.frame(proportion = proportions[gene,],
-                           status = cd$Status_on_day_collection_summary,
-                           batch = paste0(cd$Site,"_",cd$sex))
-        data$proportion[is.infinite(data$proportion)] <- NA
-        
-        levels(data$batch) <- c("Cambridge_female", "Cambridge_male", 
-                                "Ncl_female", "Ncl_male")
-        
-        data$status_batch <- factor(paste0(data$status, "_", data$batch),
-                                    levels = paste0(rep(levels(data$status),each=4),
-                                             "_", 
-                                             rep(levels(data$batch), times=2)))
-        
-        data$dotposition <- data$status_batch
-        levels(data$dotposition) <- list("0.7" = levels(data$status_batch)[1],
-                                         "0.9" = levels(data$status_batch)[2],
-                                         "1.1" = levels(data$status_batch)[3],
-                                         "1.3" = levels(data$status_batch)[4],
-                                         "1.7" = levels(data$status_batch)[5],
-                                         "1.9" = levels(data$status_batch)[6],
-                                         "2.1" = levels(data$status_batch)[7],
-                                         "2.3" = levels(data$status_batch)[8])
-        data$dotposition <- as.numeric(as.character(data$dotposition))
-        
-        gg <- ggplot(data = data,aes(x=status, y= proportion)) +
-            geom_violin() +
-            geom_jitter(aes(x=dotposition, 
-                            y=proportion, 
-                            col=batch),
-                        size=2, 
-                        width = 0.05) +
-            ylim(-0.01,1.01) + 
-            ggtitle(paste0("prop: ", gene)) +
-            theme_bw() +
-            theme(plot.title = element_text(size=11))
-      return(gg)
+# number of genes that pass the omnibus test in the stageR analysis (BH-FDR, alpha < 0.05)
+num_stagewise <- unlist(lapply(stageR_res, function(ct){
+    lapply(ct, function(x){
+        sum(x[,1] < 0.05, na.rm = TRUE)
     })
-    return(gg_list)
-}
+}))
+table_1 <- data.frame(Comparison = 1:25,
+                      "Cell type" = rep(c("B", "CsMB", "ImmB", "NaiveB", "UMB"), each = 5),
+                      "COVID status" = rep(c("Asymptomatic", "Mild", "Moderate",
+                                             "Severe", "Critical")),
+                      DE = num_DE, 
+                      DD = num_DD,
+                      Overlap = num_overlap,
+                      "Stage-wise" = num_stagewise,
+                      row.names = NULL)
+head(table_1)
 ```
 
-## Prepare data for plotting
+## Manuscript supplementary table 2
+
+With the following code, we generated *supplementary table 2* from our 
+manuscript.
 
 ```{r}
-pb_counts_list <- list(Naive_moderate = pb_ct$`naive B cell`[,which(pb_ct$`naive B cell`$Status_on_day_collection_summary %in% c("Healthy", "Moderate"))],
-                       Naive_critical = pb_ct$`naive B cell`[,which(pb_ct$`naive B cell`$Status_on_day_collection_summary %in% c("Healthy", "Critical"))],
-                       Unswitched_moderate = pb_ct$`unswitched memory B cell`[,which(pb_ct$`unswitched memory B cell`$Status_on_day_collection_summary %in% c("Healthy", "Moderate"))],
-                       Unswitched_critical = pb_ct$`unswitched memory B cell`[,which(pb_ct$`unswitched memory B cell`$Status_on_day_collection_summary %in% c("Healthy", "Critical"))])
+# number of differentially detected genes in the second stage of the 
+# stageR analysis (gene-level FDR, alpha < 0.05)
+num_DD_stage2 <- unlist(lapply(stageR_res, function(ct){
+    lapply(ct, function(x){
+        sum(x[,2] < 0.05, na.rm = TRUE)
+    })
+}))
+
+# overlap between DD genes from the regular analysis and DD genes from the
+# stageR analysis
+overlap_DD <- unlist(lapply(1:5, function(ct){
+    lapply(1:5, function(contrast){
+        sum(p.adjust(DD_res[[ct]][[contrast]]$PValue, method="BH") < 0.05 & 
+                stageR_res[[ct]][[contrast]][,2] < 0.05, na.rm=TRUE)
+    })
+}))
+
+# number of differentially expressed genes in the second stage of the 
+# stageR analysis (gene-level FDR, alpha < 0.05)
+num_DE_stage2 <- unlist(lapply(stageR_res, function(ct){
+    lapply(ct, function(x){
+        sum(x[,3] < 0.05, na.rm = TRUE)
+    })
+}))
+
+# overlap between DE genes from the regular analysis and DE genes from the
+# stageR analysis
+overlap_DE <- unlist(lapply(1:5, function(ct){
+    lapply(1:5, function(contrast){
+        sum(p.adjust(DGE_res[[ct]][[contrast]]$PValue, method="BH") < 0.05 & 
+                stageR_res[[ct]][[contrast]][,3] < 0.05, na.rm=TRUE)
+    })
+}))
+
+
+table_sup2_v1 <- data.frame(Comparison = 1:25,
+                      "Cell type" = rep(c("B", "CsMB", "ImmB", "NaiveB", "UMB"), each = 5),
+                      "COVID status" = rep(c("Asymptomatic", "Mild", "Moderate",
+                                             "Severe", "Critical")),
+                      DE = num_DE,
+                      DE_2 = num_DE_stage2,
+                      overlap_DE_DE2 = overlap_DE,
+                      DD = num_DD,
+                      DD_2 = num_DD_stage2,
+                      overlap_DD_DD2 = overlap_DD,
+                      row.names = NULL)
+
+table_sup2_v1[c(18,20,23,25),]
 ```
+
+# Scatter plots and violin plots
+## Naive Moderate
+
+### Scatter plots
 
 ```{r}
-pb_bin_list <- list(Naive_moderate = pb_bin_ct$`naive B cell`[,which(pb_bin_ct$`naive B cell`$Status_on_day_collection_summary %in% c("Healthy", "Moderate"))],
-                    Naive_critical = pb_bin_ct$`naive B cell`[,which(pb_bin_ct$`naive B cell`$Status_on_day_collection_summary %in% c("Healthy", "Critical"))],
-                    Unswitched_moderate = pb_bin_ct$`unswitched memory B cell`[,which(pb_bin_ct$`unswitched memory B cell`$Status_on_day_collection_summary %in% c("Healthy", "Moderate"))],
-                    Unswitched_critical = pb_bin_ct$`unswitched memory B cell`[,which(pb_bin_ct$`unswitched memory B cell`$Status_on_day_collection_summary %in% c("Healthy", "Critical"))])
+scatterplotData_naive_mod <- scatterplot_data(data_bin = pb_bin_ct$`naive B cell`,
+                                              data_count = pb_ct$`naive B cell`,
+                                              DD_res = DD_res$`naive B cell`[[3]],
+                                              DE_res = DGE_res$`naive B cell`[[3]],
+                                              stageR_res = stageR_res$`naive B cell`$Moderate,
+                                              group1 = "Healhty",
+                                              group2 = "Moderate")
+
+scatterplots_naive_mod <- scatterplots_visualize(plotData = scatterplotData_naive_mod)
+
+((scatterplots_naive_mod[[1]] + scatterplots_naive_mod[[2]]) / 
+        (scatterplots_naive_mod[[3]] + scatterplots_naive_mod[[4]])) +
+    plot_annotation(title = "Naive B cell - Healthy vs. moderately ill") + 
+    plot_layout(guides = "collect")
 ```
 
-## Naive B cells - moderate{.tabset}
-
-### Top 10 DD
+### Violin plots
 
 ```{r, echo = FALSE, warning=FALSE, message=FALSE}
-interest <- DD_res$`naive B cell`[[3]][order(DD_res$`naive B cell`[[3]]$PValue),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Naive_moderate, 
-                           genes = rownames(interest)[1:10])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-### Top 10 DD not DGE (pvalue)
-
-```{r, echo = FALSE}
-hlp <- which(p.adjust(DD_res$`naive B cell`[[3]]$PValue, method="BH") < 0.05 &
-               p.adjust(DGE_res$`naive B cell`[[3]]$PValue, method="BH") >= 0.05)
-interest <- DD_res$`naive B cell`[[3]][hlp,]
-interest <- interest[order(interest$PValue),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Naive_moderate, 
-                           genes = rownames(interest)[1:10])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
+interest <- c("TRBC2", "PPIB", "ATP5F1A", "ACTG1")
+violinplots_DD_naive_mod <- violin_DD(data_bin = pb_bin_ct$`naive B cell`,
+                                      group1 = "Healthy",
+                                      group2 = "Moderate",
+                                      genes = interest,
+                                      normalize = TRUE)
+violinplots_DE_naive_mod <- violin_DGE(data_count = pb_ct$`naive B cell`,
+                                       group1 = "Healthy",
+                                       group2 = "Moderate",
+                                       genes = interest)
 ```
 
 ### Manuscript figure
 
 ```{r}
-pdf("./figures/figure3.pdf",
-            width     = 8,
-            height    = 5,
-            pointsize = 4)
-DD_prop_plots[[3]] + DGE_plots[[3]] + plot_layout(guides = "collect")
+set.seed(4634)
+figures_naive_mod <- scatter_violin_paper(scatterplots = scatterplots_naive_mod,
+                                          scatterplotData = scatterplotData_naive_mod,
+                                          violinplots_DD = violinplots_DD_naive_mod,
+                                          violinplots_DE = violinplots_DE_naive_mod,
+                                          genes = c("TRBC2", "PPIB", "ATP5F1A"),
+                                          legend_position = c(0.9,0.35),
+                                          nudge_x = c(1,0,2),
+                                          nudge_y = c(1,1,-1))
+
+png("./figures/fig_covid_naiveModerate_complementarity.png",
+            width     = 12,
+            height    = 8,
+            res = 600,
+            units = "in")
+
+((figures_naive_mod$topleft | figures_naive_mod$topright) + 
+        plot_layout(guides = "keep")) /
+    ((figures_naive_mod$bottomleft | figures_naive_mod$bottomright ) + 
+         plot_layout(guides = "collect"))
+
 dev.off()
 ```
 
-### Top 10 DD not DGE (lfc)
+## Naive Critical
 
-```{r, echo = FALSE}
-hlp <- which(p.adjust(DD_res$`naive B cell`[[3]]$PValue, method="BH") < 0.05 &
-               p.adjust(DGE_res$`naive B cell`[[3]]$PValue, method="BH") >= 0.05)
-
-interest <- DD_res$`naive B cell`[[3]][hlp,]
-interest <- interest[order(interest$logFC),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Naive_moderate, 
-                         genes = rownames(interest)[1:10])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Naive_moderate, 
-                           genes = rownames(interest)[1:10])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-## Naive B cells - critical{.tabset}
-
-### Top 10 DD
-
-```{r, echo = FALSE}
-interest <- DD_res$`naive B cell`[[5]][order(DD_res$`naive B cell`[[5]]$PValue),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:10])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:10])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:10])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Naive_critical, 
-                           genes = rownames(interest)[1:10])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-### Top 10 DD not DGE (pvalue)
-
-```{r, echo = FALSE}
-hlp <- which(p.adjust(DD_res$`naive B cell`[[5]]$PValue, method="BH") < 0.05 &
-               p.adjust(DGE_res$`naive B cell`[[5]]$PValue, method="BH") >= 0.05)
-
-interest <- DD_res$`naive B cell`[[5]][hlp,]
-interest <- interest[order(interest$PValue),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:7])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:7])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:7])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Naive_critical, 
-                           genes = rownames(interest)[1:7])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-### Top 10 DD not DGE (lfc)
-
-```{r, echo = FALSE}
-hlp <- which(p.adjust(DD_res$`naive B cell`[[5]]$PValue, method="BH") < 0.05 &
-               p.adjust(DGE_res$`naive B cell`[[5]]$PValue, method="BH") >= 0.05)
-
-interest <- DD_res$`naive B cell`[[5]][hlp,]
-interest <- interest[order(interest$logFC),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:7])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:7])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Naive_critical, 
-                         genes = rownames(interest)[1:7])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Naive_critical, 
-                           genes = rownames(interest)[1:7])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-## Unswitched memory B cells - moderate{.tabset}
-
-### Top 10 DD not DGE (pvalue)
-
-```{r, echo = FALSE}
-hlp <- which(p.adjust(DD_res$`unswitched memory B cell`[[3]]$PValue, method="BH") < 0.05 &
-               p.adjust(DGE_res$`unswitched memory B cell`[[3]]$PValue, method="BH") >= 0.05)
-
-interest <- DD_res$`unswitched memory B cell`[[3]][hlp,]
-interest <- interest[order(interest$PValue),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Unswitched_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Unswitched_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Unswitched_moderate, 
-                         genes = rownames(interest)[1:10])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Unswitched_moderate, 
-                           genes = rownames(interest)[1:10])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-### Top 10 DD not DGE (lfc)
-
-```{r, echo = FALSE}
-hlp <- which(p.adjust(DD_res$`unswitched memory B cell`[[3]]$PValue, method="BH") < 0.05 &
-               p.adjust(DGE_res$`unswitched memory B cell`[[3]]$PValue, method="BH") >= 0.05)
-
-interest <- DD_res$`unswitched memory B cell`[[3]][hlp,]
-interest <- interest[order(interest$logFC),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Unswitched_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Unswitched_moderate, 
-                         genes = rownames(interest)[1:10])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Unswitched_moderate, 
-                         genes = rownames(interest)[1:10])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Unswitched_moderate, 
-                           genes = rownames(interest)[1:10])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-## Unswitched memory B cells - critical{.tabset}
-
-### Top 10 DD not DGE (pvalue)
-
-```{r, echo = FALSE}
-hlp <- which(p.adjust(DD_res$`unswitched memory B cell`[[5]]$PValue, method="BH") < 0.05 &
-               p.adjust(DGE_res$`unswitched memory B cell`[[5]]$PValue, method="BH") >= 0.05)
-
-interest <- DD_res$`unswitched memory B cell`[[5]][hlp,]
-interest <- interest[order(interest$PValue),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Unswitched_critical, 
-                         genes = rownames(interest)[1:10])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Unswitched_critical, 
-                         genes = rownames(interest)[1:10])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Unswitched_critical, 
-                         genes = rownames(interest)[1:10])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Unswitched_critical, 
-                           genes = rownames(interest)[1:10])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-### Top 10 DD not DGE (lfc)
-
-```{r, echo = FALSE}
-hlp <- which(p.adjust(DD_res$`unswitched memory B cell`[[5]]$PValue, method="BH") < 0.05 &
-               p.adjust(DGE_res$`unswitched memory B cell`[[5]]$PValue, method="BH") >= 0.05)
-
-interest <- DD_res$`unswitched memory B cell`[[5]][hlp,]
-interest <- interest[order(interest$logFC),]
-head(interest,n=10)
-```
-
-```{r, echo = FALSE, warning=FALSE, message=FALSE}
-DD_lor_plots <- visualize_DD_LOR(pb = pb_bin_list$Unswitched_critical, 
-                         genes = rownames(interest)[1:10])
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Unswitched_critical, 
-                         genes = rownames(interest)[1:10])
-DD_logprop_plots <- visualize_DD_logprop(pb = pb_bin_list$Unswitched_critical, 
-                         genes = rownames(interest)[1:10])
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Unswitched_critical, 
-                           genes = rownames(interest)[1:10])
-
-for(i in seq_along(DGE_plots)){
-  print((DD_prop_plots[[i]] + DGE_plots[[i]]) / 
-          (DD_logprop_plots[[i]] + DD_lor_plots[[i]]) + plot_layout(guides = "collect"))
-}
-```
-
-# Single-cell plots
+### Scatter plots
 
 ```{r}
-sce <- readRDS("./objects/sce_Covid_Bcells.rds")
+scatterplotData_naive_crit <- scatterplot_data(data_bin = pb_bin_ct$`naive B cell`,
+                                               data_count = pb_ct$`naive B cell`,
+                                               DD_res = DD_res$`naive B cell`[[5]],
+                                               DE_res = DGE_res$`naive B cell`[[5]],
+                                               stageR_res = stageR_res$`naive B cell`$Critical,
+                                               group1 = "Healhty",
+                                               group2 = "Critical")
+
+scatterplots_naive_crit <- scatterplots_visualize(plotData = scatterplotData_naive_crit)
+
+((scatterplots_naive_crit[[1]] + scatterplots_naive_crit[[2]]) / 
+        (scatterplots_naive_crit[[3]] + scatterplots_naive_crit[[4]])) +
+    plot_annotation(title = "Naive B cell - Healthy vs. critically ill") + 
+    plot_layout(guides = "collect")
 ```
 
-```{r}
-sce_sub <- sce[,sce$cell_type_curated == "naive B cell"]
-sce_sub <- sce_sub[,sce_sub$donor_id %in% pb_bin_list$Naive_moderate$donor_id]
+### Violin plots
 
-lnc <- logNormCounts(sce_sub,name="logNormCounts")
-lnc$Site_sex <- paste0(lnc$Site, "_", lnc$sex)
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+interest <- c("MKI67", "IGHV2-70D", "IFITM1")
+violinplots_DD_naive_crit <- violin_DD(data_bin = pb_bin_ct$`naive B cell`,
+                                       group1 = "Healthy",
+                                       group2 = "Critical",
+                                       genes = interest,
+                                       normalize = TRUE)
+violinplots_DE_naive_crit <- violin_DGE(data_count = pb_ct$`naive B cell`,
+                                        group1 = "Healthy",
+                                        group2 = "Critical",
+                                        genes = interest)
 ```
 
-```{r}
-gene <- "ACTG1"
-DD_prop_plots <- visualize_DD_prop(pb = pb_bin_list$Naive_moderate, 
-                                   genes = gene)
-DGE_plots <- visualize_DGE(pb = pb_counts_list$Naive_moderate, 
-                           genes = gene)
+### Manuscript figure
 
-print(DD_prop_plots[[1]] + DGE_plots[[1]] + plot_layout(guides = "collect"))
+```{r}
+set.seed(4634)
+figures_naive_crit <- scatter_violin_paper(scatterplots = scatterplots_naive_crit,
+                                           scatterplotData = scatterplotData_naive_crit,
+                                           violinplots_DD = violinplots_DD_naive_crit,
+                                           violinplots_DE = violinplots_DE_naive_crit,
+                                           genes = c("MKI67", "IGHV2-70D", "IFITM1"),
+                                           legend_position = c(0.9,0.73),
+                                           nudge_x = c(1,0,0),
+                                           nudge_y = c(0,2,-2))
+
+png("./figures/fig_covid_naiveCritical_complementarity.png",
+            width     = 12,
+            height    = 8,
+            res = 600,
+            units = "in")
+
+((figures_naive_crit$topleft | figures_naive_crit$topright) + 
+        plot_layout(guides = "keep")) /
+    ((figures_naive_crit$bottomleft | figures_naive_crit$bottomright ) + 
+         plot_layout(guides = "collect"))
+
+dev.off()
 ```
 
+## Unswitched Moderate
+
+### Scatter plots
+
 ```{r}
-df_hlp <- data.frame(counts = assays(sce_sub)$counts[gene,],
-                     lnc = assays(lnc)$logNormCounts[gene,],
-                     Site_sex = lnc$Site_sex,
-                     Status = lnc$Status_on_day_collection_summary,
-                     Donor = as.factor(as.character(lnc$donor_id)))
+scatterplotData_unsw_mod <- scatterplot_data(data_bin = pb_bin_ct$`unswitched memory B cell`,
+                                             data_count = pb_ct$`unswitched memory B cell`,
+                                             DD_res = DD_res$`unswitched memory B cell`[[3]],
+                                             DE_res = DGE_res$`unswitched memory B cell`[[3]],
+                                             stageR_res = stageR_res$`unswitched memory B cell`$Moderate,
+                                             group1 = "Healhty",
+                                             group2 = "Moderate")
 
-df_hlp <- df_hlp[df_hlp$Site_sex == "Ncl_male",]
+scatterplots_unsw_mod <- scatterplots_visualize(plotData = scatterplotData_unsw_mod)
 
-gg1 <- ggplot(data = df_hlp, aes(x=Donor,y=counts, fill=Status)) +
-            geom_violin() +
-            facet_grid(~Status, space = "free_x", scales = "free_x") +
-            ggtitle(paste0("Counts: ",gene)) +
-            theme_bw() +
-            theme(plot.title = element_text(size=11),
-                  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-gg2 <- ggplot(data = df_hlp, aes(x=Donor,y=lnc, fill=Status)) +
-            geom_violin() +
-            facet_grid(~Status, space = "free_x", scales = "free_x") +
-            ggtitle(paste0("LogNormCounts: ",gene)) +
-            theme_bw() +
-            theme(plot.title = element_text(size=11),
-                  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+((scatterplots_unsw_mod[[1]] + scatterplots_unsw_mod[[2]]) / 
+        (scatterplots_unsw_mod[[3]] + scatterplots_unsw_mod[[4]])) +
+    plot_annotation(title = "Unswitched memory B cell - Healthy vs. moderately ill") + 
+    plot_layout(guides = "collect")
 ```
 
+### Violin plots
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+interest <- c("S100A8","ATP8", "IGKV3-11")
+violinplots_DD_unsw_mod <- violin_DD(data_bin = pb_bin_ct$`unswitched memory B cell`,
+                                     group1 = "Healthy",
+                                     group2 = "Moderate",
+                                     genes = interest,
+                                     normalize = TRUE)
+violinplots_DE_unsw_mod <- violin_DGE(data_count = pb_ct$`unswitched memory B cell`,
+                                      group1 = "Healthy",
+                                      group2 = "Moderate",
+                                      genes = interest)
+```
+
+### Manuscript figure
+
 ```{r}
-pdf("./figures/figure4.pdf",
-            width     = 8,
-            height    = 5,
-            pointsize = 4)
-gg2
+set.seed(4634)
+figures_unsw_mod <- scatter_violin_paper(scatterplots = scatterplots_unsw_mod,
+                                         scatterplotData = scatterplotData_unsw_mod,
+                                         violinplots_DD = violinplots_DD_unsw_mod,
+                                         violinplots_DE = violinplots_DE_unsw_mod,
+                                         genes = c("S100A8","ATP8", "IGKV3-11"),
+                                         legend_position = c(0.9,0.35),
+                                         nudge_x = c(1,1,-1),
+                                         nudge_y = c(0,0,0))
+
+png("./figures/fig_covid_unswModerate_complementarity.png",
+            width     = 12,
+            height    = 8,
+            res = 600,
+            units = "in")
+
+((figures_unsw_mod$topleft | figures_unsw_mod$topright) + 
+        plot_layout(guides = "keep")) /
+    ((figures_unsw_mod$bottomleft | figures_unsw_mod$bottomright ) + 
+         plot_layout(guides = "collect"))
+
+dev.off()
+```
+
+## Unswitched Critical
+
+### Scatter plots
+
+```{r}
+scatterplotData_unsw_crit <- scatterplot_data(data_bin = pb_bin_ct$`unswitched memory B cell`,
+                                              data_count = pb_ct$`unswitched memory B cell`,
+                                              DD_res = DD_res$`unswitched memory B cell`[[5]],
+                                              DE_res = DGE_res$`unswitched memory B cell`[[5]],
+                                              stageR_res = stageR_res$`unswitched memory B cell`$Critical,
+                                              group1 = "Healhty",
+                                              group2 = "Critical")
+
+scatterplots_unsw_crit <- scatterplots_visualize(plotData = scatterplotData_unsw_crit)
+
+((scatterplots_unsw_crit[[1]] + scatterplots_unsw_crit[[2]]) / 
+        (scatterplots_unsw_crit[[3]] + scatterplots_unsw_crit[[4]])) +
+    plot_annotation(title = "Unswitched memory B cell - Healthy vs. critically ill") + 
+    plot_layout(guides = "collect")
+```
+
+### Violin plots
+
+We will not construct violin plots for this contrast, because there are no
+differentially expressed genes
+
+### Manuscript figure
+
+```{r}
+set.seed(4634)
+figure_unsw_crit <- scatterplots_unsw_crit[[2]] +
+    theme(strip.text.x = element_blank(),
+      legend.position=c(0.92,0.2),
+      legend.title = element_text(size = 10), 
+      legend.text = element_text(size = 9),
+      legend.spacing.y = unit(2, "mm"),
+      legend.key.size = unit(0.5, 'lines')
+      ) + 
+  ggrepel::geom_label_repel( 
+    data = scatterplotData_unsw_crit %>% filter(gene %in% c("EIF5A","HBB")),
+    aes(label=gene),
+    size = 3,
+    fill = "white",
+    color = "black",
+    nudge_x = c(0,0),
+    nudge_y = c(0,0),
+    box.padding   = 1.5, 
+    point.padding = 0.5,
+    segment.color = 'grey50',
+    min.segment.length = 0)  + 
+  ggtitle("Panel A: pval-pval plot") + 
+  theme(plot.title = element_text(size = 11, face="bold"))
+
+png("./figures/fig_covid_unswCritical_complementarity.png",
+            width     = 6,
+            height    = 4,
+            res = 600,
+            units = "in")
+
+figure_unsw_crit
+
+dev.off()
+```
+
+# GSEA
+
+```{r}
+# load universe genes
+universe <- openxlsx::read.xlsx("/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/allgenes.xlsx")$To
+
+# Load link between symbols and Entrez
+ensembl <- useEnsembl(biomart = 'genes',
+                      dataset = 'hsapiens_gene_ensembl',
+                      version = 109)
+geneInfo <- getBM(attributes = c("hgnc_symbol",
+                                 "entrezgene_id"),
+                  mart = ensembl)
+```
+
+## Unswitched Moderate
+
+### Stage 2 (manuscript table 2)
+
+```{r}
+# DD stage 2
+gsea_DD2 <- run_gsea(genes = stageR_res$`unswitched memory B cell`$Moderate[,2],
+                     geneInfo = geneInfo,
+                     universe = universe)
+
+# DE stage 2
+gsea_DE2 <- run_gsea(genes = stageR_res$`unswitched memory B cell`$Moderate[,3],
+                     geneInfo = geneInfo,
+                     universe = universe)
+
+# Omnibus
+gsea_omnibus <- run_gsea(genes = stageR_res$`unswitched memory B cell`$Moderate[,1],
+                         geneInfo = geneInfo,
+                         universe = universe)
+
+# Combine results from stageR omnibus test, stage 2 DD and stage 2 DE analysis
+gsea_df_1 <- data.frame(Term = union(gsea_DD2$Term[1:10],
+                                     union(gsea_DE2$Term[1:10],
+                                           gsea_omnibus$Term[1:10])))
+gsea_df_1$rank_DD2 <- gsea_DD2$Rank[match(gsea_df_1$Term, gsea_DD2$Term)]
+gsea_df_1$rank_DE2 <- gsea_DE2$Rank[match(gsea_df_1$Term, gsea_DE2$Term)]
+gsea_df_1$rank_omnibus <- gsea_omnibus$Rank[match(gsea_df_1$Term, gsea_omnibus$Term)]
+gsea_df_1$pval_DD2 <- gsea_DD2$P.DE[match(gsea_df_1$Term, gsea_DD2$Term)]
+gsea_df_1$pval_DE2 <- gsea_DE2$P.DE[match(gsea_df_1$Term, gsea_DE2$Term)]
+gsea_df_1$pval_omnibus <- gsea_omnibus$P.DE[match(gsea_df_1$Term, gsea_omnibus$Term)]
+
+# Write results file
+# This file is used as table 2 in our manuscript
+write.xlsx(x = gsea_df_1,
+           file = "/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/Unsw_mod_stage2.xlsx")
+```
+
+### Stage 1 vs 2 (manuscript suppelmentary table 6)
+
+```{r}
+# DD
+genes_DD <- p.adjust(DD_res$`unswitched memory B cell`[[3]]$PValue, method="BH")
+names(genes_DD) <- rownames(DD_res$`unswitched memory B cell`[[3]])
+gsea_DD <- run_gsea(genes = genes_DD,
+                    geneInfo = geneInfo,
+                    universe = universe)
+
+# DE
+genes_DE <- p.adjust(DGE_res$`unswitched memory B cell`[[3]]$PValue, method="BH")
+names(genes_DE) <- rownames(DGE_res$`unswitched memory B cell`[[3]])
+gsea_DE <- run_gsea(genes = genes_DE,
+                    geneInfo = geneInfo,
+                    universe = universe)
+
+gsea_df_2 <- data.frame(Term = union(gsea_DD$Term[1:10],
+                                     union(gsea_DD2$Term[1:10],
+                                           union(gsea_DE$Term[1:10],
+                                                 gsea_DE2$Term[1:10]))))
+gsea_df_2$rank_DD <- gsea_DD$Rank[match(gsea_df_2$Term, gsea_DD$Term)]
+gsea_df_2$rank_DD2 <- gsea_DD2$Rank[match(gsea_df_2$Term, gsea_DD2$Term)]
+gsea_df_2$rank_DE <- gsea_DE$Rank[match(gsea_df_2$Term, gsea_DE$Term)]
+gsea_df_2$rank_DE2 <- gsea_DE2$Rank[match(gsea_df_2$Term, gsea_DE2$Term)]
+gsea_df_2$pval_DD <- gsea_DD$P.DE[match(gsea_df_2$Term, gsea_DD$Term)]
+gsea_df_2$pval_DD2 <- gsea_DD2$P.DE[match(gsea_df_2$Term, gsea_DD2$Term)]
+gsea_df_2$pval_DE <- gsea_DE$P.DE[match(gsea_df_2$Term, gsea_DE$Term)]
+gsea_df_2$pval_DE2 <- gsea_DE2$P.DE[match(gsea_df_2$Term, gsea_DE2$Term)]
+
+# Write results file
+# This file is used as supplementary table 6 in our manuscript
+write.xlsx(x = gsea_df_2,
+           file = "/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/Unsw_mod_stage1vs2.xlsx")
+```
+
+## Unswitched Critical
+
+### Stage 2 (manuscript supplementary table 3)
+
+```{r}
+# DD stage 2
+gsea_DD2 <- run_gsea(genes = stageR_res$`unswitched memory B cell`$Critical[,2],
+                     geneInfo = geneInfo,
+                     universe = universe)
+
+# DE and stagewise: can't be performed, no DE genes
+
+gsea_df_3 <- data.frame(Term = gsea_DD2$Term,
+                        rank_DD = gsea_DD2$Rank,
+                        pval_DD = gsea_DD2$P.DE)
+
+# Write results file
+# This file is used as supplementary table 3 in our manuscript
+write.xlsx(x = gsea_df_2[1:10,],
+           file = "/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/Unsw_crit_stage2.xlsx")
+```
+
+### Stage 1 vs 2 (manuscript supplementary table 7)
+
+```{r}
+# DD
+genes_DD <- p.adjust(DD_res$`unswitched memory B cell`[[5]]$PValue, method="BH")
+names(genes_DD) <- rownames(DD_res$`unswitched memory B cell`[[5]])
+gsea_DD <- run_gsea(genes = genes_DD,
+                    geneInfo = geneInfo,
+                    universe = universe)
+
+gsea_df_4 <- data.frame(Term = union(gsea_DD$Term[1:10],
+                                    gsea_DD2$Term[1:10]))
+gsea_df_4$rank_DD <- gsea_DD$Rank[match(gsea_df_4$Term, gsea_DD$Term)]
+gsea_df_4$rank_DD2 <- gsea_DD2$Rank[match(gsea_df_4$Term, gsea_DD2$Term)]
+
+gsea_df_4$pval_DD <- gsea_DD$P.DE[match(gsea_df_4$Term, gsea_DD$Term)]
+gsea_df_4$pval_DD2 <- gsea_DD2$P.DE[match(gsea_df_4$Term, gsea_DD2$Term)]
+
+# Write results file
+# This file is used as supplementary table 7 in our manuscript
+write.xlsx(x = gsea_df_4,
+           file = "/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/Unsw_crit_stage1vs2.xlsx")
+```
+
+## Naive Moderate
+
+### Stage 2 (manuscript supplementary table 4)
+
+```{r}
+# DD stage 2
+gsea_DD2 <- run_gsea(genes = stageR_res$`naive B cell`$Moderate[,2],
+                     geneInfo = geneInfo,
+                     universe = universe)
+
+# DE stage 2
+gsea_DE2 <- run_gsea(genes = stageR_res$`naive B cell`$Moderate[,3],
+                     geneInfo = geneInfo,
+                     universe = universe)
+
+# Omnibus
+gsea_omnibus <- run_gsea(genes = stageR_res$`naive B cell`$Moderate[,1],
+                         geneInfo = geneInfo,
+                         universe = universe)
+
+gsea_df_5 <- data.frame(Term = union(gsea_DD2$Term[1:10], 
+                                     union(gsea_DE2$Term[1:10],
+                                           gsea_omnibus$Term[1:10])))
+gsea_df_5$rank_DD2 <- gsea_DD2$Rank[match(gsea_df_5$Term, gsea_DD2$Term)]
+gsea_df_5$rank_DE2 <- gsea_DE2$Rank[match(gsea_df_5$Term, gsea_DE2$Term)]
+gsea_df_5$rank_omnibus <- gsea_omnibus$Rank[match(gsea_df_5$Term, gsea_omnibus$Term)]
+
+gsea_df_5$pval_DD2 <- gsea_DD2$P.DE[match(gsea_df_5$Term, gsea_DD2$Term)]
+gsea_df_5$pval_DE2 <- gsea_DE2$P.DE[match(gsea_df_5$Term, gsea_DE2$Term)]
+gsea_df_5$pval_omnibus <- gsea_omnibus$P.DE[match(gsea_df_5$Term, gsea_omnibus$Term)]
+
+# Write results file
+# This file is used as supplementary table 4 in our manuscript
+write.xlsx(x = gsea_df_5,
+           file = "/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/naive_mod_stage2.xlsx")
+```
+
+### Stage 1vs2 (manuscript supplementary table 8)
+
+```{r}
+# DD
+genes_DD <- p.adjust(DD_res$`naive B cell`[[3]]$PValue, method="BH")
+names(genes_DD) <- rownames(DD_res$`naive B cell`[[3]])
+gsea_DD <- run_gsea(genes = genes_DD,
+                    geneInfo = geneInfo,
+                    universe = universe)
+
+# DE
+genes_DE <- p.adjust(DGE_res$`naive B cell`[[3]]$PValue, method="BH")
+names(genes_DE) <- rownames(DGE_res$`naive B cell`[[3]])
+gsea_DE <- run_gsea(genes = genes_DE,
+                    geneInfo = geneInfo,
+                    universe = universe)
+
+gsea_df_6 <- data.frame(Term = union(gsea_DD$Term[1:10], 
+                                   union(gsea_DD2$Term[1:10],
+                                         union(gsea_DE$Term[1:10],
+                                               gsea_DE2$Term[1:10]))))
+gsea_df_6$rank_DD <- gsea_DD$Rank[match(gsea_df_6$Term, gsea_DD$Term)]
+gsea_df_6$rank_DD2 <- gsea_DD2$Rank[match(gsea_df_6$Term, gsea_DD2$Term)]
+gsea_df_6$rank_DE <- gsea_DE$Rank[match(gsea_df_6$Term, gsea_DE$Term)]
+gsea_df_6$rank_DE2 <- gsea_DE2$Rank[match(gsea_df_6$Term, gsea_DE2$Term)]
+gsea_df_6$pval_DD <- gsea_DD$P.DE[match(gsea_df_6$Term, gsea_DD$Term)]
+gsea_df_6$pval_DD2 <- gsea_DD2$P.DE[match(gsea_df_6$Term, gsea_DD2$Term)]
+gsea_df_6$pval_DE <- gsea_DE$P.DE[match(gsea_df_6$Term, gsea_DE$Term)]
+gsea_df_6$pval_DE2 <- gsea_DE2$P.DE[match(gsea_df_6$Term, gsea_DE2$Term)]
+
+# Write results file
+# This file is used as supplementary table 8 in our manuscript
+write.xlsx(x = gsea_df_6,
+           file = "/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/naive_mod_stage1vs2.xlsx")
+```
+
+## Naive Critical (manuscript supplementary table 5)
+
+### Stage 2
+
+```{r}
+# DD stage 2
+gsea_DD2 <- run_gsea(genes = stageR_res$`naive B cell`$Critical[,2],
+                     geneInfo = geneInfo,
+                     universe = universe)
+
+# DE stage 2
+gsea_DE2 <- run_gsea(genes = stageR_res$`naive B cell`$Critical[,3],
+                     geneInfo = geneInfo,
+                     universe = universe)
+
+# stagewise
+gsea_omnibus <- run_gsea(genes = stageR_res$`naive B cell`$Critical[,1],
+                         geneInfo = geneInfo,
+                         universe = universe)
+
+gsea_df_7 <- data.frame(Term = union(gsea_DD2$Term[1:10], 
+                                     union(gsea_DE2$Term[1:10],
+                                           gsea_omnibus$Term[1:10])))
+
+gsea_df_7$rank_DD <- gsea_DD2$Rank[match(gsea_df_7$Term, gsea_DD2$Term)]
+gsea_df_7$rank_DE <- gsea_DE2$Rank[match(gsea_df_7$Term, gsea_DE2$Term)]
+gsea_df_7$rank_omnibus <- gsea_omnibus$Rank[match(gsea_df_7$Term, gsea_omnibus$Term)]
+
+gsea_df_7$pval_DD <- gsea_DD2$P.DE[match(gsea_df_7$Term, gsea_DD2$Term)]
+gsea_df_7$pval_DE <- gsea_DE2$P.DE[match(gsea_df_7$Term, gsea_DE2$Term)]
+gsea_df_7$pval_omnibus <- gsea_omnibus$P.DE[match(gsea_df_7$Term, gsea_omnibus$Term)]
+
+# Write results file
+# This file is used as supplementary table 5 in our manuscript
+write.xlsx(x = gsea_df_7,
+           file = "/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/naive_crit_stage2.xlsx")
+```
+
+### Stage 1 vs 2 (manuscript supplementary table 9)
+
+```{r}
+# DD
+genes_DD <- p.adjust(DD_res$`naive B cell`[[5]]$PValue, method="BH")
+names(genes_DD) <- rownames(DD_res$`naive B cell`[[5]])
+gsea_DD <- run_gsea(genes = genes_DD,
+                    geneInfo = geneInfo,
+                    universe = universe)
+
+# DE
+genes_DE <- p.adjust(DGE_res$`naive B cell`[[5]]$PValue, method="BH")
+names(genes_DE) <- rownames(DGE_res$`naive B cell`[[5]])
+gsea_DE <- run_gsea(genes = genes_DE,
+                    geneInfo = geneInfo,
+                    universe = universe)
+
+gsea_df_8 <- data.frame(Term = union(gsea_DD$Term[1:10], 
+                                     union(gsea_DD2$Term[1:10],
+                                           union(gsea_DE$Term[1:10],
+                                                 gsea_DE2$Term[1:10]))))
+gsea_df_8$rank_DD <- gsea_DD$Rank[match(gsea_df_8$Term, gsea_DD$Term)]
+gsea_df_8$rank_DD2 <- gsea_DD2$Rank[match(gsea_df_8$Term, gsea_DD2$Term)]
+gsea_df_8$rank_DE <- gsea_DE$Rank[match(gsea_df_8$Term, gsea_DE$Term)]
+gsea_df_8$rank_DE2 <- gsea_DE2$Rank[match(gsea_df_8$Term, gsea_DE2$Term)]
+gsea_df_8$pval_DD <- gsea_DD$P.DE[match(gsea_df_8$Term, gsea_DD$Term)]
+gsea_df_8$pval_DD2 <- gsea_DD2$P.DE[match(gsea_df_8$Term, gsea_DD2$Term)]
+gsea_df_8$pval_DE <- gsea_DE$P.DE[match(gsea_df_8$Term, gsea_DE$Term)]
+gsea_df_8$pval_DE2 <- gsea_DE2$P.DE[match(gsea_df_8$Term, gsea_DE2$Term)]
+
+# Write results file
+# This file is used as supplementary table 9 in our manuscript
+write.xlsx(x = gsea_df_8,
+           file = "/Users/jg/Desktop/PhD/DD_project/DD_cases/Covid/GSEA/naive_crit_stage1vs2.xlsx")
+```
+
+# Visualize offset
+
+This figure displays the normalization offsets (CDR) that were used in the 
+differential detection inference. Note that this figure was not included in the
+manuscript.
+
+```{r}
+pdf("./figures/casecovid_CDR.pdf",
+            width     = 10,
+            height    = 7,
+            pointsize = 3)
+
+titles <- names(pb_bin_ct)
+plotList <- vector(mode = "list", length = 5)
+for (i in seq_along(pb_bin_ct)) {
+    element <- pb_bin_ct[[i]]
+    bin_counts <- assay(element)
+    of <- colMeans(sweep(bin_counts, 2, element$ncells, "/")) 
+    logitOf <- log(of/(1-of))
+    df <- data.frame(status = element$Status_on_day_collection_summary,
+                     offset = of,
+                     Site = element$Site)
+    
+    plotList[[i]] <- ggplot(data = df, aes(x = status, y = offset, col = Site)) +
+        geom_jitter(width = 0.2) +
+        theme_bw() +
+        ggtitle(titles[i]) + 
+        theme(plot.title = element_text(size = 12),
+              axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+}
+
+(plotList[[1]] + plotList[[2]] + plotList[[3]]) / 
+    (plotList[[4]] + plotList[[5]] + plot_spacer()) + plot_layout(guides = "collect")
+
 dev.off()
 ```
 
 # Get percentage 0-1-2 for single-cell level data
+
+Here we obtain, for each subset of the data, the fraction of counts that are
+zeros, ones, twos and values higher than two. This information is used in the
+discussion section of our manuscript
 
 ```{r}
 pb_ct <- readRDS("./objects/pb_ct_filt.rds")
@@ -800,14 +899,5 @@ e_r <- sum(assay(sce_hlp) > 2)
 ```{r}
 sessionInfo()
 ```
-
-
-
-
-
-
-
-
-
 
 
