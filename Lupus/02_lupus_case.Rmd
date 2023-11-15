@@ -1,0 +1,539 @@
+---
+title: "Case study on the lupus dataset"
+author: "Jeroen Gilis & Laura Perin"
+date: "15/11/2023"
+output:
+    html_document:
+      code_download: true    
+      theme: cosmo
+      toc: true
+      toc_float: true
+      highlight: tango
+      number_sections: true
+---
+
+# Load libraries
+
+```{r, message=FALSE, warning=FALSE}
+library(SingleCellExperiment)
+library(ggplot2)
+library(Matrix)
+library(edgeR)
+library(scuttle)
+library(iCOBRA)
+library(patchwork)
+library(scater)
+library(ComplexHeatmap)
+library(EnhancedVolcano)
+library(dplyr)
+library(pbapply)
+library(stageR)
+library(harmonicmeanp)
+library(scran)
+```
+
+# Set project root
+
+```{r}
+here_root <- "Lupus"
+here::i_am(file.path(here_root, "02_lupus_case.Rmd"))
+```
+
+# Load helper functions
+
+```{r}
+source("03_LupusCase_HelperFunctions.R")
+```
+
+# Load filtered data
+
+```{r}
+sce_list <- readRDS("./objects/sce_sep_filt.rds")
+sce_list <- lapply(sce_list, function(x){
+    x$Age <- as.numeric(as.character(x$Age)) # Age: factor -> numeric
+    return(x)
+})
+```
+
+# Pseudobulk aggregation
+
+```{r}
+pb_list <- lapply(sce_list, function(element){
+  aggregateAcrossCells(element,ids=element$ind_cov)
+})
+```
+
+# Data exploration
+
+```{r, fig.width=6, fig.height=5}
+par(mfrow=c(2,2))
+hist(pb_list$T4_naive$ncells, breaks=seq(0,3600,50), xlim = c(0,3600), 
+     main = "T4_naive - #cells p.p.")
+hist(pb_list$ncM$ncells, breaks=seq(0,3600,50), xlim = c(0,3600), 
+     main = "ncM - #cells p.p.")
+hist(pb_list$B_mem$ncells, breaks=seq(0,3600,50), xlim = c(0,3600), 
+     main = "B_mem - #cells p.p.")
+```
+
+```{r}
+# number of healthy/lupus patients in each batch, per cell type
+table(pb_list$T4_naive$batch_cov, pb_list$T4_naive$Status)
+table(pb_list$ncM$batch_cov, pb_list$ncM$Status)
+table(pb_list$B_mem$batch_cov, pb_list$B_mem$Status) # 1 patient less (pool 4 managed)
+```
+
+# Dimension reduction
+
+Here, we briefly inspect the data in reduced dimension space using tSNE.
+These figures were not used in our manuscript.
+
+```{r}
+# Normalization
+pb_list <- lapply(pb_list, function(x){
+    sf <- librarySizeFactors(x)
+    x <- logNormCounts(x,size.factors=sf)
+    return(x)
+})
+
+# Get 10% most variable genes
+hvg_list <- lapply(pb_list, function(x){
+    dec <- modelGeneVar(x)
+    fit <- metadata(dec)
+    hvg <- getTopHVGs(dec, prop=0.1)
+    return(hvg)
+})
+
+# Run PCA
+set.seed(1234)
+pb_list <- lapply(seq_along(pb_list), function(i){
+    runPCA(pb_list[[i]],
+           ncomponents=30,
+           subset_row=hvg_list[[i]])
+})
+
+# Run tSNE
+pb_list <- lapply(pb_list, function(x){
+    runTSNE(x,
+           dimred = 'PCA',
+           n_dimred = 10,
+           external_neighbors=TRUE)
+})
+
+names(pb_list) <- c("B_mem", "ncM", "T4_naive")
+```
+
+```{r}
+plotTSNE(pb_list$B_mem, 
+         shape_by = "SLE_status", 
+         colour_by = "batch_cov",
+         point_size=2,
+         point_alpha = 1)
+plotTSNE(pb_list$ncM, 
+         shape_by = "SLE_status", 
+         colour_by = "batch_cov",
+         point_size=2,
+         point_alpha = 1)
+plotTSNE(pb_list$T4_naive, 
+         shape_by = "SLE_status", 
+         colour_by = "batch_cov",
+         point_size = 2,
+         point_alpha = 1)
+```
+
+The patterns in the reduced dimensional space seem to differ between the 
+different cell type:
+- For the B memory cells, there does not seem to be a strong effect of disease
+status. Patients of the same batch somewhat cluster together, but the effect is 
+not too pronounced. There does seem to be another covariate at play that is
+dividing patients of the same batch that is not disease status, but coloring
+on any of the other covariates in the data did not result in identifying this
+covariate (suggests an unobserved confounder)
+- For nCM cells, there is a clear effect of disease status. Within disease 
+status, patients cluster by batch
+- For T4 naive cells, there is a clear batch effect. One batch clusters 
+completely separately from the others. Within batch, patients cluster by disease
+status
+
+# Differential expression analysis: edgeR
+
+```{r}
+DGE_res <- pblapply(pb_list, function(element){
+    ct <- levels(droplevels(element$ct_cov))
+    y <- DGEList(counts=counts(element), samples=colData(element))
+    y <- calcNormFactors(y)
+    design <- model.matrix(~ factor(batch_cov) + factor(SLE_status) + Age, y$samples)
+    y <- estimateDisp(y,design)
+    fit <- glmQLFit(y,design,robust=T)
+    res <- glmQLFTest(fit,coef = "factor(SLE_status)SLE")
+    
+    par(mfrow=c(1,2))
+    plotBCV(y, main = paste0("BCV plot for ", ct))
+    plotQLDisp(fit, main = paste0("QLDisp plot for ", ct))
+    
+    return(res$table)
+})
+```
+
+# Differential detection analysis: edgeR-NB_optim
+
+## Binarization and pseudobulk aggregation
+
+```{r}
+pb_bin_list <- lapply(sce_list, function(element){
+  assay(element)[assay(element)>=1] <- 1
+  aggregateAcrossCells(element,ids=element$ind_cov)
+})
+```
+
+## Analysis
+
+```{r}
+DD_res <- pblapply(pb_bin_list, function(element){
+    ct <- levels(droplevels(element$ct_cov))
+    med_detection <- rowMedians(sweep(assay(element), 2, element$ncells, "/"))
+    hist(med_detection, breaks=40,
+         main = paste0("Median detection per gene for ", ct))
+    abline(v=0.9, col="red", lwd=2)
+    
+    y <- DGEList(counts=assay(element)[med_detection < 0.9,],
+                 samples=colData(element))
+    design <- model.matrix(~ factor(batch_cov) + factor(SLE_status) + Age, y$samples)
+    
+    of <- colMeans(sweep(assay(element)[med_detection < 0.9,], 2, element$ncells, "/"))
+    y$offset <- log(element$ncells*of)
+    
+    y <- estimateDisp(y,design)
+    fit <- glmQLFit(y,design,robust=T)
+    res <- glmQLFTest(fit,coef = "factor(SLE_status)SLE", poisson.bound = FALSE)
+    #res <- glmTreat(fit,coef = ncol(design), lfc=0.2)
+    
+    par(mfrow=c(1,2))
+    plotBCV(y, main = paste0("BCV plot for ", ct))
+    plotQLDisp(fit, main = paste0("QLDisp plot for ", ct))
+    
+    return(res$table)
+})
+```
+
+# Stagewise testing
+
+Note: by removing genes that are detected in (nearly) all samples in the
+differential detection analysis but not the differential expression analysis,
+the results will be of different dimensions. For easy comparison between the two
+analyses, I will here fill in `NA` values for the genes that were removed in the
+DD analysis
+
+```{r}
+for(i in seq_along(DD_res)){
+  removed <- which(!rownames(DGE_res[[i]]) %in% rownames(DD_res[[i]])) # detect removed genes
+  DD_res[[i]][nrow(DD_res[[i]]) + length(removed),] <- NA # add NA values for removed genes
+  rownames(DD_res[[i]])[(nrow(DD_res[[i]])-length(removed)+1):nrow(DD_res[[i]])] <- rownames(DGE_res[[i]])[removed] # add rownames for removed genes
+  DD_res[[i]] <- DD_res[[i]][match(rownames(DGE_res[[i]]), rownames(DD_res[[i]])),] # correct order
+}
+```
+
+```{r, warning=FALSE, message=FALSE}
+DD_DE_Sig <- lapply(1:3, function(i){
+  
+    pScreen <- rep(NA, nrow(DD_res[[i]]))
+    for(h in 1:length(pScreen)){
+        if(is.na(DD_res[[i]]$PValue[h])){
+          pScreen[h] <- DGE_res[[i]]$PValue[h]
+        } else {
+          pScreen[h] <- hmp.stat(c(DD_res[[i]]$PValue[h],
+                                   DGE_res[[i]]$PValue[h]),
+                                 w=NULL)
+        }
+    }
+    names(pScreen) <- rownames(DD_res[[i]])
+    
+    #confirmation stage
+    pConfirmation <- as.matrix(cbind(DD_res[[i]]$PValue, 
+                                     DGE_res[[i]]$PValue))
+    dimnames(pConfirmation) <- list(rownames(DD_res[[i]]), c("DD","DE"))
+    
+    # stageWise analysis
+    stageRObj <- stageR(pScreen=pScreen, 
+                        pConfirmation=pConfirmation, 
+                        pScreenAdjusted=FALSE)
+    stageRObj <- stageWiseAdjustment(object=stageRObj, 
+                                     method="none", 
+                                     alpha=0.05,
+                                     allowNA = TRUE)
+    res <- getResults(stageRObj)
+    print(sum(res[,1]))
+    
+    DD_DE_Sig_i <- getAdjustedPValues(stageRObj, 
+                                      onlySignificantGenes=FALSE, 
+                                      order=FALSE)
+    return(DD_DE_Sig_i)
+})
+names(DD_DE_Sig) <- c("B_mem", "ncM", "T4_naive")
+```
+
+# Manuscript table 3
+
+```{r}
+# Table 3 for manuscript
+num_overlap <- sapply(1:3, function(i){
+    sum(DD_DE_Sig[[i]][,2] < 0.05 & 
+            DD_DE_Sig[[i]][,3] < 0.05, na.rm=TRUE)
+})
+
+table3 <- data.frame(Comparison = 1:3,
+                     "Cell Type" = c("B Memory", "nCM", "T4 Naive"),
+                     Omnibus = sapply(DD_DE_Sig, function(x){sum(x[,1] < 0.05)}),
+                     DEstage2 = sapply(DD_DE_Sig, function(x){sum(x[,3] < 0.05, na.rm=TRUE)}),
+                     DDstage2 = sapply(DD_DE_Sig, function(x){sum(x[,2] < 0.05, na.rm=TRUE)}),
+                     Overlap = num_overlap,
+                     row.names = NULL)
+table3
+```
+
+# pval-pval
+
+```{r}
+plotDataList <- vector(mode = "list", length = 3)
+plotList <- vector(mode = "list", length = 3)
+titles <- c("Panel A: B memory cells", "Panel B: Non-classical myeloid cells",
+            "Panel C: T4 naive cells")
+
+for(i in 1:3){
+    
+bin_counts <- assay(pb_bin_list[[i]])
+cd <- colData(pb_bin_list[[i]])
+cd <- droplevels(cd)
+detection <- rowMeans(sweep(bin_counts, 2, cd$ncells, "/"))
+
+counts <- assay(pb_list[[i]])
+cd <- colData(pb_list[[i]])
+libSize <- counts %>%
+    colSums %>%
+    unname
+expression <- rowMeans(sweep(log2(counts+0.5), 2, (-log2(libSize+1) + log2(1e6)), "+"))
+
+plotData <- data.frame(gene = rownames(DD_res[[i]]),
+                       DD_pval = DD_res[[i]]$PValue,
+                       DD_FDR = p.adjust(DD_res[[i]]$PValue,
+                                         method = "BH"),
+                       DE_pval = DGE_res[[i]]$PValue,
+                       DE_FDR = p.adjust(DGE_res[[i]]$PValue,
+                                         method = "BH"),
+                       stage_FDR = DD_DE_Sig[[i]][,1],
+                       detection = detection,
+                       logCPM = expression)
+plotData$DD_FDR[is.na(plotData$DD_FDR)] <- 1
+plotData$Category <- case_when(plotData$DD_FDR >= 0.05 & plotData$DE_FDR >= 0.05 ~ "Neither",
+                            plotData$DD_FDR < 0.05 & plotData$DE_FDR >= 0.05 ~ "DD only",
+                            plotData$DD_FDR >= 0.05 & plotData$DE_FDR < 0.05 ~ "DE only",
+                            plotData$DD_FDR < 0.05 & plotData$DE_FDR < 0.05 ~ "Both")
+plotData$Stagewise <- ifelse(plotData$stage_FDR <= 0.05, "yes", "no")
+
+plotList[[i]] <- ggplot(data = plotData,
+                        aes(x = -log10(DD_pval),
+                            y = -log10(DE_pval),
+                            color = Category,
+                            fill = Stagewise,
+                            shape = Stagewise)) +
+    geom_point(size = 0.9,stroke=0.8) +
+    scale_shape_manual(values=c(19,21)) +
+    scale_color_manual(values=c("#009E73","#CC79A7","#D55E00","black")) +
+    scale_fill_manual(values=c(NA,"#F0E442"),na.translate = FALSE) +
+    theme_bw() +
+    ggtitle(titles[i]) +
+    theme(plot.title = element_text(size = 12, face="bold")) 
+
+plotDataList[[i]] <- plotData
+
+}
+```
+
+```{r}
+png("./figures/fig_lupus_DDpval_DEpval.png",
+            width     = 9,
+            height    = 6,
+            res = 600,
+            units = "in")
+(plotList[[1]] | plotList[[2]]) /
+  (plotList[[3]] | plot_spacer())  +
+    plot_layout(guides = "collect")
+dev.off()
+```
+
+# Venn diagram
+
+Note that this Venn diagram was not included in our manuscript.
+
+```{r}
+par(mfrow=c(2,2))
+for (j in seq_along(DD_res)) {
+    pval_df <- data.frame(DGE = DGE_res[[j]]$PValue,
+                          DD = DD_res[[j]]$PValue)
+    rownames(pval_df) <- rownames(DGE_res[[j]])
+    pad <- pval_df
+    pad$DGE <- p.adjust(pad$DGE, method = "BH")
+    pad$DD <- p.adjust(pad$DD, method = "BH")
+    cobradata <- COBRAData(pval = pval_df, padj=pad)
+    cobraperf <- calculate_performance(cobradata, splv = "none",maxsplit = 4)
+    cobraplot <- prepare_data_for_plot(cobraperf, colorscheme = "Dark2", facetted = TRUE)
+    plot_overlap(cobraplot, main=names(DD_res)[j])
+}
+```
+
+# Violin plots
+
+Creating violin plots displaying genes that are DE, DD, or both, like we also
+did for the Covid case study. These figures are not included in the manuscript.
+
+## Bmem
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+targets <- c("ENSG00000112149", "ENSG00000204592","ENSG00000171223")
+
+DD_violins_Bmem <- violin_DD(pb = pb_bin_list$B_mem,
+                             genes = targets)
+DGE_violins_Bmem <- violin_DGE(pb = pb_list$B_mem, 
+                               genes = targets)
+```
+
+```{r}
+set.seed(77777)
+figures_Bmem <- scatter_violin_paper(scatterplot = plotList[[1]],
+                                     scatterplotData = plotDataList[[1]],
+                                     violinplots_DD = DD_violins_Bmem,
+                                     violinplots_DE = DGE_violins_Bmem,
+                                     genes = targets,
+                                     legend_position = c(0.9,0.35),
+                                     nudge_x = c(-1,-1,1.5),
+                                     nudge_y = c(1,1,-1))
+
+png("./figures/violins_Bmem.png",
+            width     = 12,
+            height    = 8,
+            res = 600,
+            units = "in")
+
+((figures_Bmem$topleft | figures_Bmem$topright) + 
+        plot_layout(guides = "keep")) /
+    ((figures_Bmem$bottomleft | figures_Bmem$bottomright ) + 
+         plot_layout(guides = "collect"))
+
+dev.off()
+```
+
+## ncM
+
+```{r}
+targets <- c("ENSG00000138496", "ENSG00000041357","ENSG00000104408")
+
+DD_violins_ncM <- violin_DD(pb = pb_bin_list$ncM,
+                            genes = targets)
+DGE_violins_ncM <- violin_DGE(pb = pb_list$ncM, 
+                              genes = targets)
+```
+
+```{r}
+set.seed(4634)
+figures_ncM <- scatter_violin_paper(scatterplot = plotList[[2]],
+                                    scatterplotData = plotDataList[[2]],
+                                    violinplots_DD = DD_violins_ncM,
+                                    violinplots_DE = DGE_violins_ncM,
+                                    genes = targets,
+                                    legend_position = c(0.9,0.35),
+                                    nudge_x = c(-1,0,-0.5),
+                                    nudge_y = c(1,-1.5,3))
+
+png("./figures/violins_ncM.png",
+            width     = 12,
+            height    = 8,
+            res = 600,
+            units = "in")
+
+((figures_ncM$topleft | figures_ncM$topright) + 
+        plot_layout(guides = "keep")) /
+    ((figures_ncM$bottomleft | figures_ncM$bottomright ) + 
+         plot_layout(guides = "collect"))
+
+dev.off()
+```
+
+## T4naive
+
+```{r}
+targets <- c("ENSG00000082146", "ENSG00000101608","ENSG00000135486") # "ENSG00000127184"
+
+DD_violins_T4naive <- violin_DD(pb = pb_bin_list$T4_naive,
+                                genes = targets)
+DGE_violins_T4naive <- violin_DGE(pb = pb_list$T4_naive, 
+                                  genes = targets)
+```
+
+```{r}
+set.seed(6853)
+figures_T4naive <- scatter_violin_paper(scatterplot = plotList[[3]],
+                                    scatterplotData = plotDataList[[3]],
+                                    violinplots_DD = DD_violins_T4naive,
+                                    violinplots_DE = DGE_violins_T4naive,
+                                    genes = targets,
+                                    legend_position = c(0.9,0.35),
+                                    nudge_x = c(0,0,2),
+                                    nudge_y = c(1,-3,1))
+
+png("./figures/violins_T4naive.png",
+            width     = 12,
+            height    = 8,
+            res = 600,
+            units = "in")
+
+((figures_T4naive$topleft | figures_T4naive$topright) + 
+        plot_layout(guides = "keep")) /
+    ((figures_T4naive$bottomleft | figures_T4naive$bottomright ) + 
+         plot_layout(guides = "collect"))
+
+dev.off()
+```
+
+# Get percentage 0-1-2-2+ for single-cell level dat
+
+Here we obtain the fraction of counts that are zeros, ones, twos and values 
+higher than two in the single-cell level data. This information is used in the
+discussion section of our manuscript.
+
+```{r}
+# B_mem
+a_entries <- nrow(sce_list$B_mem)*ncol(sce_list$B_mem)
+a_0 <- sum(assay(sce_list$B_mem) == 0)
+a_1 <- sum(assay(sce_list$B_mem) == 1)
+a_2 <- sum(assay(sce_list$B_mem) == 2)
+a_r <- sum(assay(sce_list$B_mem) > 2)
+
+# T4_naive
+b_entries <- nrow(sce_list$T4_naive)*ncol(sce_list$T4_naive)
+b_0 <- sum(assay(sce_list$T4_naive) == 0)
+b_1 <- sum(assay(sce_list$T4_naive) == 1)
+b_2 <- sum(assay(sce_list$T4_naive) == 2)
+b_r <- sum(assay(sce_list$T4_naive) > 2)
+
+# ncM
+c_entries <- nrow(sce_list$ncM)*ncol(sce_list$ncM)
+c_0 <- sum(assay(sce_list$ncM) == 0)
+c_1 <- sum(assay(sce_list$ncM) == 1)
+c_2 <- sum(assay(sce_list$ncM) == 2)
+c_r <- sum(assay(sce_list$ncM) > 2)
+```
+
+```{r}
+(a_0+b_0+c_0)/(a_entries+b_entries+c_entries)*100 # %0
+(a_1+b_1+c_1)/(a_entries+b_entries+c_entries)*100 # %1
+(a_2+b_2+c_2)/(a_entries+b_entries+c_entries)*100 # %2
+(a_r+b_r+c_r)/(a_entries+b_entries+c_entries)*100 # %2+
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```
+
+
+

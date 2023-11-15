@@ -15,6 +15,7 @@
 *.nb.html
 
 dev/
+data-raw/
 data/
 objects/
 notebooks/

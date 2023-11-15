@@ -824,11 +824,11 @@ for (i in seq_along(pb_bin_ct)) {
 dev.off()
 ```
 
-# Get percentage 0-1-2 for single-cell level data
+# Get percentage 0-1-2-2+ for single-cell level data
 
-Here we obtain, for each subset of the data, the fraction of counts that are
-zeros, ones, twos and values higher than two. This information is used in the
-discussion section of our manuscript
+Here we obtain the fraction of counts that are zeros, ones, twos and values 
+higher than two in the single-cell level data. This information is used in the
+discussion section of our manuscript.
 
 ```{r}
 pb_ct <- readRDS("./objects/pb_ct_filt.rds")

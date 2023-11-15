@@ -1,0 +1,115 @@
+---
+title: "Prepare data for the lupus case study"
+author: "Jeroen Gilis & Laura Perin"
+date: "14/11/2023"
+output:
+    html_document:
+      code_download: true    
+      theme: cosmo
+      toc: true
+      toc_float: true
+      highlight: tango
+      number_sections: true
+---
+
+# Load libraries
+
+```{r, message=FALSE, warning=FALSE}
+library(SingleCellExperiment)
+library(ggplot2)
+library(HDF5Array)
+library(Matrix)
+library(edgeR)
+library(here)
+```
+
+# Set project root
+
+```{r}
+here_root <- "Lupus"
+here::i_am(file.path(here_root, "01_lupus_prepare.Rmd"))
+```
+
+# Load helper functions
+
+```{r}
+source("03_LupusCase_HelperFunctions.R")
+```
+
+# Load data
+
+```{r}
+in_dir <- here::here(here_root, "objects")
+lupus_file <- file.path(in_dir, "lupus-SCE-cleaned.rds")
+stopifnot(file.exists(lupus_file))
+sce <- readRDS(lupus_file)
+dim(sce) # 32738 1263676
+```
+
+# Filtering based on metadata
+
+Goal: cut down on the potential number of confounders
+
+- Retain only Sex == Female
+- Retain only Ethnicity == European
+- Retain only Status == Healthy|Managed
+- Retain only from six particular batches. Based on the metadata from the original preprint (whih does not seem to be present in the author's updated data), we chose these bathes so that all data come from either the CLUES or LupCon study and each batch has cells of either study. This should render the study variable redundant.
+- Retain only cells of cell type T4naive, Bmem and ncM. This corresponds to celltypes with a large, medium and medium/small number of cells per cell type.
+
+```{r}
+sce <- sce[,which(sce$Sex == "Female" &
+                  sce$Ethnicity == "European" &
+                  sce$Status %in% c("Healthy", "Managed"))]
+sce <- sce[,which(sce$batch_cov %in% c("dmx_YS-JY-20_pool3",
+                                       "dmx_YS-JY-20_pool4",
+                                       "dmx_YS-JY-21_pool1",
+                                       "dmx_YS-JY-21_pool2",
+                                       "dmx_YS-JY-22_pool5",
+                                       "dmx_YS-JY-22_pool6"))]
+sce <- sce[,sce$ct_cov %in% c("T4_naive", "B_mem", "ncM")] 
+colData(sce) <- droplevels(colData(sce))
+```
+
+```{r}
+colSums(table(sce$ind_cov, sce$Status) > 0) # 22 26
+```
+
+```{r}
+table(sce$ind_cov, sce$ct_cov)
+```
+
+# Filtering on features
+
+We are just going to remove the all zero features to speed up downstream 
+computations: 27400 -> 20494 genes
+
+```{r}
+rs <- rowSums(assay(sce))
+sce <- sce[rs > 0,]
+
+counts(sce) <- as(counts(sce), "sparseMatrix") # slow step
+```
+
+Filter genes, for each cell type separately.
+
+```{r}
+# at least some expression in at least 200 cells
+sce_sep <- prepData(data = sce,
+                    splitVar = "ct_cov",
+                    filter = "edgeR_sep",
+                    edgeR_filter_spec = list(group = NULL,
+                                             min.count = 1,
+                                             min.total.count = 0,
+                                             large.n = 200,
+                                             min.prop = 0))
+```
+
+```{r}
+lapply(sce_sep, dim)
+```
+
+```{r}
+saveRDS(sce_sep,"./objects/sce_sep_filt.rds")
+```
+
+
