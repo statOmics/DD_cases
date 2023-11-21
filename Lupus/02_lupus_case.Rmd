@@ -275,17 +275,41 @@ names(DD_DE_Sig) <- c("B_mem", "ncM", "T4_naive")
 
 ```{r}
 # Table 3 for manuscript
-num_overlap <- sapply(1:3, function(i){
-    sum(DD_DE_Sig[[i]][,2] < 0.05 & 
-            DD_DE_Sig[[i]][,3] < 0.05, na.rm=TRUE)
+overlap_DE_DD <- sapply(c(3,1,2), function(i){
+    length(intersect(which(p.adjust(DGE_res[[i]]$PValue, method="BH") < 0.05),
+                     which(p.adjust(DD_res[[i]]$PValue, method="BH") < 0.05)))
 })
 
+overlap_DE2_DD2 <- sapply(c(3,1,2), function(i){
+    length(intersect(names(which(DD_DE_Sig[[i]][,2] < 0.05)),
+          names(which(DD_DE_Sig[[i]][,3] < 0.05))))
+})
+
+overlap_DE_DE2 <- sapply(c(3,1,2), function(i){
+    length(intersect(rownames(DGE_res[[i]])[p.adjust(DGE_res[[i]]$PValue, method="BH") < 0.05],
+                     names(which(DD_DE_Sig[[i]][,3] < 0.05))))
+})
+
+overlap_DD_DD2 <- sapply(c(3,1,2), function(i){
+    length(intersect(rownames(DD_res[[i]])[p.adjust(DD_res[[i]]$PValue, method="BH") < 0.05],
+                     names(which(DD_DE_Sig[[i]][,2] < 0.05))))
+})
+
+
+DE_ind <- sapply(DGE_res[c(3,1,2)], function(x){sum(p.adjust(x$PValue, method = "BH") < 0.05, na.rm = TRUE)})
+DD_ind <- sapply(DD_res[c(3,1,2)], function(x){sum(p.adjust(x$PValue, method = "BH") < 0.05, na.rm = TRUE)})
+
 table3 <- data.frame(Comparison = 1:3,
-                     "Cell Type" = c("B Memory", "nCM", "T4 Naive"),
-                     Omnibus = sapply(DD_DE_Sig, function(x){sum(x[,1] < 0.05)}),
-                     DEstage2 = sapply(DD_DE_Sig, function(x){sum(x[,3] < 0.05, na.rm=TRUE)}),
-                     DDstage2 = sapply(DD_DE_Sig, function(x){sum(x[,2] < 0.05, na.rm=TRUE)}),
-                     Overlap = num_overlap,
+                     "Cell Type" = c("T4 Naive", "B Memory", "nCM"),
+                     DE = DE_ind,
+                     DD = DD_ind,
+                     Omnibus = sapply(DD_DE_Sig[c(3,1,2)], function(x){sum(x[,1] < 0.05)}),
+                     DEstage2 = sapply(DD_DE_Sig[c(3,1,2)], function(x){sum(x[,3] < 0.05, na.rm=TRUE)}),
+                     DDstage2 = sapply(DD_DE_Sig[c(3,1,2)], function(x){sum(x[,2] < 0.05, na.rm=TRUE)}),
+                     overlap_DE_DD = overlap_DE_DD,
+                     overlap_DE2_DD2 = overlap_DE2_DD2,
+                     overlap_DE_DE2 = overlap_DE_DE2,
+                     overlap_DD_DD2 = overlap_DD_DD2,
                      row.names = NULL)
 table3
 ```
