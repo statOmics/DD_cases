@@ -64,9 +64,7 @@ scatterplot_data <- function(data_bin,
 }
 
 ## Create scatterplots
-scatterplots_visualize <- function(plotData){
-
-
+scatterplots_visualize <- function(plotData, limit_add){
 
     # Scatterplot 1: -log10 of DGE p-values against logCPM (normalized
     # expression, averaged across pseudobulk samples)
@@ -92,6 +90,7 @@ scatterplots_visualize <- function(plotData){
                         color = Category,
                         fill = Stagewise,
                         shape = Stagewise)) +
+        geom_abline(slope=1,intercept = 0,alpha=0.5) +
         geom_point(size = 0.9,stroke=0.8) +
         scale_shape_manual(values=c(19,21)) +
         scale_color_manual(values=c("Both" = "#009E73",
@@ -99,6 +98,8 @@ scatterplots_visualize <- function(plotData){
                                     "DE only" = "#D55E00",
                                     "Neither" = "black")) +
         scale_fill_manual(values=c(NA,"#F0E442"),na.translate = FALSE) +
+        xlim(0,max(-log10(plotData$DD_pval),-log10(plotData$DE_pval), na.rm = TRUE) + limit_add) +
+        ylim(0,max(-log10(plotData$DD_pval),-log10(plotData$DE_pval), na.rm = TRUE) + limit_add) +
         theme_bw()
 
     # Scatterplot 3: logCPM (normalized expression, averaged across pseudobulk

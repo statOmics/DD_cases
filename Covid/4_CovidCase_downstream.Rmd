@@ -253,6 +253,7 @@ table_sup2_v1[c(18,20,23,25),]
 ```
 
 # Scatter plots and violin plots
+
 ## Naive Moderate
 
 ### Scatter plots
@@ -266,7 +267,8 @@ scatterplotData_naive_mod <- scatterplot_data(data_bin = pb_bin_ct$`naive B cell
                                               group1 = "Healhty",
                                               group2 = "Moderate")
 
-scatterplots_naive_mod <- scatterplots_visualize(plotData = scatterplotData_naive_mod)
+scatterplots_naive_mod <- scatterplots_visualize(plotData = scatterplotData_naive_mod,
+                                                 limit_add = 1)
 
 ((scatterplots_naive_mod[[1]] + scatterplots_naive_mod[[2]]) / 
         (scatterplots_naive_mod[[3]] + scatterplots_naive_mod[[4]])) +
@@ -298,7 +300,7 @@ figures_naive_mod <- scatter_violin_paper(scatterplots = scatterplots_naive_mod,
                                           violinplots_DD = violinplots_DD_naive_mod,
                                           violinplots_DE = violinplots_DE_naive_mod,
                                           genes = c("TRBC2", "PPIB", "ATP5F1A"),
-                                          legend_position = c(0.9,0.35),
+                                          legend_position = c(0.9,0.3),
                                           nudge_x = c(1,0,2),
                                           nudge_y = c(1,1,-1))
 
@@ -329,7 +331,8 @@ scatterplotData_naive_crit <- scatterplot_data(data_bin = pb_bin_ct$`naive B cel
                                                group1 = "Healhty",
                                                group2 = "Critical")
 
-scatterplots_naive_crit <- scatterplots_visualize(plotData = scatterplotData_naive_crit)
+scatterplots_naive_crit <- scatterplots_visualize(plotData = scatterplotData_naive_crit,
+                                                  limit_add = 2)
 
 ((scatterplots_naive_crit[[1]] + scatterplots_naive_crit[[2]]) / 
         (scatterplots_naive_crit[[3]] + scatterplots_naive_crit[[4]])) +
@@ -392,7 +395,8 @@ scatterplotData_unsw_mod <- scatterplot_data(data_bin = pb_bin_ct$`unswitched me
                                              group1 = "Healhty",
                                              group2 = "Moderate")
 
-scatterplots_unsw_mod <- scatterplots_visualize(plotData = scatterplotData_unsw_mod)
+scatterplots_unsw_mod <- scatterplots_visualize(plotData = scatterplotData_unsw_mod,
+                                                limit_add = 1)
 
 ((scatterplots_unsw_mod[[1]] + scatterplots_unsw_mod[[2]]) / 
         (scatterplots_unsw_mod[[3]] + scatterplots_unsw_mod[[4]])) +
@@ -424,7 +428,7 @@ figures_unsw_mod <- scatter_violin_paper(scatterplots = scatterplots_unsw_mod,
                                          violinplots_DD = violinplots_DD_unsw_mod,
                                          violinplots_DE = violinplots_DE_unsw_mod,
                                          genes = c("S100A8","ATP8", "IGKV3-11"),
-                                         legend_position = c(0.9,0.35),
+                                         legend_position = c(0.9,0.3),
                                          nudge_x = c(1,1,-1),
                                          nudge_y = c(0,0,0))
 
@@ -455,7 +459,8 @@ scatterplotData_unsw_crit <- scatterplot_data(data_bin = pb_bin_ct$`unswitched m
                                               group1 = "Healhty",
                                               group2 = "Critical")
 
-scatterplots_unsw_crit <- scatterplots_visualize(plotData = scatterplotData_unsw_crit)
+scatterplots_unsw_crit <- scatterplots_visualize(plotData = scatterplotData_unsw_crit,
+                                                 limit_add = 1)
 
 ((scatterplots_unsw_crit[[1]] + scatterplots_unsw_crit[[2]]) / 
         (scatterplots_unsw_crit[[3]] + scatterplots_unsw_crit[[4]])) +
