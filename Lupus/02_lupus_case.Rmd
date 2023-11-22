@@ -324,52 +324,56 @@ titles <- c("Panel A: B memory cells", "Panel B: Non-classical myeloid cells",
 
 for(i in 1:3){
     
-bin_counts <- assay(pb_bin_list[[i]])
-cd <- colData(pb_bin_list[[i]])
-cd <- droplevels(cd)
-detection <- rowMeans(sweep(bin_counts, 2, cd$ncells, "/"))
-
-counts <- assay(pb_list[[i]])
-cd <- colData(pb_list[[i]])
-libSize <- counts %>%
-    colSums %>%
-    unname
-expression <- rowMeans(sweep(log2(counts+0.5), 2, (-log2(libSize+1) + log2(1e6)), "+"))
-
-plotData <- data.frame(gene = rownames(DD_res[[i]]),
-                       DD_pval = DD_res[[i]]$PValue,
-                       DD_FDR = p.adjust(DD_res[[i]]$PValue,
-                                         method = "BH"),
-                       DE_pval = DGE_res[[i]]$PValue,
-                       DE_FDR = p.adjust(DGE_res[[i]]$PValue,
-                                         method = "BH"),
-                       stage_FDR = DD_DE_Sig[[i]][,1],
-                       detection = detection,
-                       logCPM = expression)
-plotData$DD_FDR[is.na(plotData$DD_FDR)] <- 1
-plotData$Category <- case_when(plotData$DD_FDR >= 0.05 & plotData$DE_FDR >= 0.05 ~ "Neither",
-                            plotData$DD_FDR < 0.05 & plotData$DE_FDR >= 0.05 ~ "DD only",
-                            plotData$DD_FDR >= 0.05 & plotData$DE_FDR < 0.05 ~ "DE only",
-                            plotData$DD_FDR < 0.05 & plotData$DE_FDR < 0.05 ~ "Both")
-plotData$Stagewise <- ifelse(plotData$stage_FDR <= 0.05, "yes", "no")
-
-plotList[[i]] <- ggplot(data = plotData,
-                        aes(x = -log10(DD_pval),
-                            y = -log10(DE_pval),
-                            color = Category,
-                            fill = Stagewise,
-                            shape = Stagewise)) +
-    geom_point(size = 0.9,stroke=0.8) +
-    scale_shape_manual(values=c(19,21)) +
-    scale_color_manual(values=c("#009E73","#CC79A7","#D55E00","black")) +
-    scale_fill_manual(values=c(NA,"#F0E442"),na.translate = FALSE) +
-    theme_bw() +
-    ggtitle(titles[i]) +
-    theme(plot.title = element_text(size = 12, face="bold")) 
-
-plotDataList[[i]] <- plotData
+        bin_counts <- assay(pb_bin_list[[i]])
+        cd <- colData(pb_bin_list[[i]])
+        cd <- droplevels(cd)
+        detection <- rowMeans(sweep(bin_counts, 2, cd$ncells, "/"))
+        
+        counts <- assay(pb_list[[i]])
+        cd <- colData(pb_list[[i]])
+        libSize <- counts %>%
+            colSums %>%
+            unname
+        expression <- rowMeans(sweep(log2(counts+0.5), 2, (-log2(libSize+1) + log2(1e6)), "+"))
+        
+        plotData <- data.frame(gene = rownames(DD_res[[i]]),
+                               DD_pval = DD_res[[i]]$PValue,
+                               DD_FDR = p.adjust(DD_res[[i]]$PValue,
+                                                 method = "BH"),
+                               DE_pval = DGE_res[[i]]$PValue,
+                               DE_FDR = p.adjust(DGE_res[[i]]$PValue,
+                                                 method = "BH"),
+                               stage_FDR = DD_DE_Sig[[i]][,1],
+                               detection = detection,
+                               logCPM = expression)
+        plotData$DD_FDR[is.na(plotData$DD_FDR)] <- 1
+        plotData$Category <- case_when(plotData$DD_FDR >= 0.05 & plotData$DE_FDR >= 0.05 ~ "Neither",
+                                    plotData$DD_FDR < 0.05 & plotData$DE_FDR >= 0.05 ~ "DD only",
+                                    plotData$DD_FDR >= 0.05 & plotData$DE_FDR < 0.05 ~ "DE only",
+                                    plotData$DD_FDR < 0.05 & plotData$DE_FDR < 0.05 ~ "Both")
+        plotData$Stagewise <- ifelse(plotData$stage_FDR <= 0.05, "yes", "no")
+        
+        plotList[[i]] <- ggplot(data = plotData,
+                                aes(x = -log10(DD_pval),
+                                    y = -log10(DE_pval),
+                                    color = Category,
+                                    fill = Stagewise,
+                                    shape = Stagewise)) +
+            geom_abline(slope=1,intercept = 0,alpha=0.5) +
+            geom_point(size = 0.9,stroke=0.8) +
+            xlim(0,max(-log10(plotData$DD_pval),-log10(plotData$DE_pval), na.rm = TRUE)+1) +
+            ylim(0,max(-log10(plotData$DD_pval),-log10(plotData$DE_pval), na.rm = TRUE)+1) +
+            scale_shape_manual(values=c(19,21)) +
+            scale_color_manual(values=c("#009E73","#CC79A7","#D55E00","black")) +
+            scale_fill_manual(values=c(NA,"#F0E442"),na.translate = FALSE) +
+            theme_bw() +
+            ggtitle(titles[i]) +
+            theme(plot.title = element_text(size = 12, face="bold")) 
+        
+        plotDataList[[i]] <- plotData
 
 }
+plotList
 ```
 
 ```{r}
