@@ -14,5 +14,5 @@ The Lupus data from [Perez *et al.* (2021)](https://doi.org/10.1126/science.abf1
 downloaded from GEO using accession number
 [GSE174188](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE174188). To run the case study code from start to end, download the `GSE174188_CLUES1_adjusted.h5ad.gz ` file and place it in the `Lupus/data-raw/` directory. Next, run the scripts 00-anndata-to-SCE.R, 01_lupus_prepare.Rmd and 02_lupus_case.Rmd in order. 
 
-Alternatively, if you would like to avoid downloading `GSE174188_CLUES1_adjusted.h5ad.gz ` (11.7Gb), you can download intermediate data objects from Zenodo (TODO: add link) and place these in the `Lupus/objects/` directory. The file 'lupus-SCE-cleaned.rds' allows you to start the analysis from script 01_lupus_prepare.Rmd, the file `sce_sep_filt.rds` allows you to start the analysis from script 02_lupus_case.Rmd. 
+Alternatively, if you would like to avoid downloading `GSE174188_CLUES1_adjusted.h5ad.gz ` (11.7Gb), you can download intermediate data objects from Zenodo (TODO: add link) and place these in the `Lupus/objects/` directory. The file `lupus-SCE-cleaned.rds` allows you to start the analysis from script 01_lupus_prepare.Rmd, the file `sce_sep_filt.rds` allows you to start the analysis from script 02_lupus_case.Rmd. 
 
