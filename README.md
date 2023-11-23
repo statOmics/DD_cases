@@ -4,7 +4,7 @@ This repository contains the code associated with the case studies from our pape
 
 ## COVID case study
 
-The COVID dataset from [Stephenson *et al.* (2021)](https://doi.org/10.1038/s41591-021-01329-2) can be downloaded programatically when running the first script of the Covid case study, 1_CovidCase_getdata.Rmd. 
+The COVID dataset from [Stephenson *et al.* (2021)](https://doi.org/10.1038/s41591-021-01329-2) can be downloaded programatically by running the first script of the Covid case study, 1_CovidCase_getdata.Rmd. 
 
 Alternatively, if you would like to avoid downloading these data, you can download intermediate data objects from Zenodo (TODO: add link) and place these in the `Covid/objects/` directory. The file `sce_Covid_Bcells.rds` allows you to start the analysis from script 2_CovidCase_DGE.Rmd. Downloading the four other files from Zenodo and placing these in the `objects` directory allows you to start the analysis from scrip 4_CovidCase_downstream.Rmd.
 
